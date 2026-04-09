@@ -1,0 +1,341 @@
+:root {
+  --font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  --bg-color: #020205;
+  --text-main: #e2e8f0;
+  --accent-pha: #ff3333;
+  --accent-safe: #aaddff;
+  --glass-bg: rgba(10, 15, 30, 0.4);
+  --glass-border: rgba(255, 255, 255, 0.1);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: var(--bg-color);
+  color: var(--text-main);
+  overflow: hidden;
+  user-select: none;
+}
+
+.app-container {
+  width: 100vw;
+  height: 100vh;
+  position: relative;
+}
+
+.canvas-container {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+}
+
+/* CRITICAL: Drei's <Html> creates outer wrapper divs as siblings of the <canvas>.
+   Without this, those wrappers capture pointer events before they reach WebGL. */
+.label-no-events {
+  pointer-events: none !important;
+}
+.label-no-events * {
+  pointer-events: none !important;
+}
+
+/* Glassmorphism HUD Panels */
+.hud-header {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  right: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.title-glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  padding: 20px 24px;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
+}
+
+.title-glass h1 {
+  font-size: 1.5rem;
+  letter-spacing: 2px;
+  font-weight: 700;
+  margin-bottom: 4px;
+  background: linear-gradient(90deg, #fff, #aaddff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.title-glass .subtitle {
+  font-size: 0.85rem;
+  color: #94a3b8;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.legend-glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  padding: 16px 20px;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: auto;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: 0 0 10px currentColor; /* Bloom effect */
+}
+
+.pha-dot {
+  background-color: var(--accent-pha);
+  color: var(--accent-pha);
+}
+
+.safe-dot {
+  background-color: var(--accent-safe);
+  color: var(--accent-safe);
+}
+
+.hud-footer {
+  position: absolute;
+  bottom: 24px;
+  left: 24px;
+  z-index: 10;
+}
+
+.status-glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  letter-spacing: 1px;
+  color: #64748b;
+  text-transform: uppercase;
+}
+
+/* Timeline Scrubber */
+.scrubber-glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  padding: 16px 24px;
+  border-radius: 12px;
+  width: 400px;
+  max-width: 90vw;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
+}
+
+.scrubber-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.year-label {
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.current-year-display {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #fff;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+}
+
+.year-slider {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  outline: none;
+}
+
+.year-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #aaddff;
+  cursor: pointer;
+  box-shadow: 0 0 10px #aaddff;
+}
+
+.close-red { background-color: #ff0000; color: #ff0000; }
+.close-orange { background-color: #ffaa00; color: #ffaa00; }
+
+.filter-controls {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+.filter-controls button {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #94a3b8;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: all 0.2s;
+}
+.filter-controls button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.filter-controls button.active {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border-color: #fff;
+}
+.filter-controls button.active.pha {
+  background: rgba(255, 51, 51, 0.2);
+  color: var(--accent-pha);
+  border-color: var(--accent-pha);
+}
+.filter-controls button.active.safe {
+  background: rgba(170, 221, 255, 0.2);
+  color: var(--accent-safe);
+  border-color: var(--accent-safe);
+}
+
+/* Data Panel for Selected Asteroid */
+.data-panel-glass {
+  position: absolute;
+  top: 150px;
+  right: 24px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  padding: 20px;
+  border-radius: 12px;
+  width: 320px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
+  z-index: 20;
+}
+
+.data-panel-glass h2 {
+  font-size: 1.1rem;
+  margin-bottom: 12px;
+  color: #fff;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  padding-bottom: 8px;
+}
+
+.data-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+
+.data-grid div strong {
+  color: #aaddff;
+}
+
+.close-btn {
+  margin-top: 16px;
+  width: 100%;
+  background: rgba(255, 51, 51, 0.2);
+  border: 1px solid rgba(255, 51, 51, 0.4);
+  color: #ffcccc;
+  padding: 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.close-btn:hover {
+  background: rgba(255, 51, 51, 0.4);
+}
+
+/* Recenter Button */
+.recenter-btn {
+  background: rgba(170, 221, 255, 0.08);
+  border: 1px solid rgba(170, 221, 255, 0.25);
+  color: #aaddff;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  backdrop-filter: blur(8px);
+}
+.recenter-btn:hover {
+  background: rgba(170, 221, 255, 0.18);
+  border-color: rgba(170, 221, 255, 0.5);
+  box-shadow: 0 0 16px rgba(170, 221, 255, 0.15);
+}
+.recenter-btn:active {
+  transform: scale(0.97);
+}
+
+/* Legend Sections */
+.legend-section-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: #475569;
+  margin-top: 4px;
+}
+
+.legend-divider {
+  width: 100%;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 2px 0;
+}
+
+.close-green { background-color: #00ffaa; color: #00ffaa; }
+
+/* Recenter Button Container */
+.hud-actions {
+  position: absolute;
+  bottom: 24px;
+  right: 24px;
+  z-index: 10;
+  display: flex;
+  gap: 8px;
+}
