@@ -2,9 +2,10 @@ import React, { Suspense } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Stars, Sphere } from '@react-three/drei';
 import { AsteroidSwarm } from './AsteroidSwarm';
+import { CloseApproaches } from './CloseApproaches';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 
-export function SpaceCanvas() {
+export function SpaceCanvas({ approachesData }) {
   return (
     <div className="canvas-container">
       <Canvas camera={{ position: [0, 40, 60], fov: 45 }}>
@@ -21,6 +22,7 @@ export function SpaceCanvas() {
           </Sphere>
 
           <AsteroidSwarm />
+          {approachesData && <CloseApproaches data={approachesData} />}
 
           <EffectComposer>
             <Bloom luminanceThreshold={0.5} luminanceSmoothing={0.9} height={300} />

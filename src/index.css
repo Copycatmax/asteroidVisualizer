@@ -135,3 +135,59 @@ body {
   color: #64748b;
   text-transform: uppercase;
 }
+
+/* Timeline Scrubber */
+.scrubber-glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  padding: 16px 24px;
+  border-radius: 12px;
+  width: 400px;
+  max-width: 90vw;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
+}
+
+.scrubber-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.year-label {
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.current-year-display {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #fff;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+}
+
+.year-slider {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  outline: none;
+}
+
+.year-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #aaddff;
+  cursor: pointer;
+  box-shadow: 0 0 10px #aaddff;
+}
+
+.close-red { background-color: #ff0000; color: #ff0000; }
+.close-orange { background-color: #ffaa00; color: #ffaa00; }
