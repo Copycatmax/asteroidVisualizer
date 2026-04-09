@@ -107,7 +107,7 @@ export function SpaceCanvas({ approachesData, filterType, selectedOrbit, onSelec
 
   return (
     <div className="canvas-container">
-      <Canvas camera={{ position: [earthPos.x, 20, earthPos.z + 30], fov: 45 }} events={{ enabled: true }}>
+      <Canvas camera={{ position: [earthPos.x, 20, earthPos.z + 30], fov: 45 }}>
         <color attach="background" args={['#020205']} />
         <ambientLight intensity={0.2} />
         <pointLight position={[0, 0, 0]} intensity={1.5} color="#fffcf5" />
