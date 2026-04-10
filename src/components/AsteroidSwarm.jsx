@@ -1,8 +1,42 @@
 import React, { useRef, useMemo, useEffect, useState } from 'react';
 import * as THREE from 'three';
+import { useFrame, useThree } from '@react-three/fiber';
 import FilterWorker from '../workers/dataFilter.worker.js?worker';
 
 const AU_TO_UNITS = 20;
+const LOD_DISTANCE_BANDS = [
+  { maxDistance: 75, stride: 1 },
+  { maxDistance: 120, stride: 2 },
+  { maxDistance: 180, stride: 4 },
+  { maxDistance: 260, stride: 8 },
+  { maxDistance: Infinity, stride: 12 },
+];
+
+function stableStringModulo(value, divisor) {
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+  }
+  return hash % divisor;
+}
+
+function stablePhaseOffset(value) {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return ((hash >>> 0) / 4294967296) * Math.PI * 2;
+}
+
+function resolveLodStride(cameraDistance) {
+  for (let i = 0; i < LOD_DISTANCE_BANDS.length; i++) {
+    if (cameraDistance <= LOD_DISTANCE_BANDS[i].maxDistance) {
+      return LOD_DISTANCE_BANDS[i].stride;
+    }
+  }
+  return 12;
+}
 
 export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, activeYear, searchTerm, pickMeshRef: externalPickMeshRef, onOrbitPickDataChange }) {
   const meshRef = useRef();
@@ -17,6 +51,18 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
   const [orbits, setOrbits] = useState([]);
   const [filteredOrbits, setFilteredOrbits] = useState([]);
   const [isWorkerReady, setIsWorkerReady] = useState(false);
+  const [lodStride, setLodStride] = useState(1);
+  const lodTimerRef = useRef(0);
+  const { camera } = useThree();
+
+  useFrame((_, delta) => {
+    lodTimerRef.current += delta;
+    if (lodTimerRef.current < 0.25) return;
+    lodTimerRef.current = 0;
+
+    const nextStride = resolveLodStride(camera.position.length());
+    setLodStride((prev) => (prev === nextStride ? prev : nextStride));
+  });
 
   const orbitBySpkId = useMemo(() => {
     const byId = new Map();
@@ -27,27 +73,40 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
   }, [orbits]);
 
   const precomputedOrbits = useMemo(() => {
-    return filteredOrbits.map((orbit) => {
+    const selectedSpkId = selectedOrbit ? String(selectedOrbit[0]) : null;
+    const sampled = [];
+
+    for (let i = 0; i < filteredOrbits.length; i++) {
+      const orbit = filteredOrbits[i];
+      const spkId = String(orbit[0]);
+      const pha = orbit[7] === 1;
+      const isSelected = selectedSpkId !== null && spkId === selectedSpkId;
+
+      // Keep dense rendering near the camera, then deterministically thin distant objects.
+      const shouldKeep = lodStride === 1 || isSelected || pha || stableStringModulo(spkId, lodStride) === 0;
+      if (!shouldKeep) continue;
+
       const aAu = orbit[1];
       const e = orbit[2];
       const inc = orbit[3];
       const om = orbit[4];
       const w = orbit[5];
       const H = orbit[6];
-      const pha = orbit[7] === 1;
 
       const periodYears = Math.sqrt(aAu * aAu * aAu);
       const n = (Math.PI * 2) / Math.max(periodYears, 1e-6);
       const aUnits = aAu * AU_TO_UNITS;
+      const phaseOffset = Number.isFinite(orbit[9]) ? orbit[9] : stablePhaseOffset(spkId);
 
       let sizeScale = Math.max(0.04, Math.pow(10, (20 - H) / 10) * 0.008);
       if (pha) sizeScale *= 1.5;
 
-      return {
+      sampled.push({
         orbit,
         pha,
         e,
         n,
+        phaseOffset,
         aUnits,
         sqrtOneMinusESq: Math.sqrt(Math.max(1 - e * e, 0)),
         cosw: Math.cos(w),
@@ -57,9 +116,11 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
         cosom: Math.cos(om),
         sinom: Math.sin(om),
         sizeScale,
-      };
-    });
-  }, [filteredOrbits]);
+      });
+    }
+
+    return sampled;
+  }, [filteredOrbits, lodStride, selectedOrbit]);
 
   // Fetch initial massive dataset
   useEffect(() => {
@@ -108,6 +169,16 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
     }
   }, [filterType, isWorkerReady]);
 
+  useEffect(() => {
+    if (!meshRef.current || !pickMeshRef.current) return;
+
+    meshRef.current.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    pickMeshRef.current.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    if (meshRef.current.instanceColor) {
+      meshRef.current.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    }
+  }, [pickMeshRef]);
+
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const color = useMemo(() => new THREE.Color(), []);
 
@@ -149,6 +220,7 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
       const pre = precomputedOrbits[i];
 
       let M = pre.n * yearOffset;
+      M += pre.phaseOffset;
       M = ((M % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
 
       // Newton-Raphson solve for eccentric anomaly so positions evolve over time.
@@ -199,15 +271,28 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
     pickMeshRef.current.geometry.boundingSphere = meshRef.current.geometry.boundingSphere;
     pickMeshRef.current.geometry.computeBoundingSphere = () => {};
 
+    if (typeof meshRef.current.instanceMatrix.clearUpdateRanges === 'function' && typeof meshRef.current.instanceMatrix.addUpdateRange === 'function') {
+      meshRef.current.instanceMatrix.clearUpdateRanges();
+      meshRef.current.instanceMatrix.addUpdateRange(0, precomputedOrbits.length * 16);
+    }
+    if (meshRef.current.instanceColor && typeof meshRef.current.instanceColor.clearUpdateRanges === 'function' && typeof meshRef.current.instanceColor.addUpdateRange === 'function') {
+      meshRef.current.instanceColor.clearUpdateRanges();
+      meshRef.current.instanceColor.addUpdateRange(0, precomputedOrbits.length * 3);
+    }
+    if (typeof pickMeshRef.current.instanceMatrix.clearUpdateRanges === 'function' && typeof pickMeshRef.current.instanceMatrix.addUpdateRange === 'function') {
+      pickMeshRef.current.instanceMatrix.clearUpdateRanges();
+      pickMeshRef.current.instanceMatrix.addUpdateRange(0, precomputedOrbits.length * 16);
+    }
+
     meshRef.current.instanceMatrix.needsUpdate = true;
     meshRef.current.instanceColor.needsUpdate = true;
     pickMeshRef.current.instanceMatrix.needsUpdate = true;
     pickCentersRef.current = pickCenters;
     pickRadiiRef.current = pickRadii;
     if (onOrbitPickDataChange) {
-      onOrbitPickDataChange({ centers: pickCenters, radii: pickRadii, orbits: filteredOrbits });
+        onOrbitPickDataChange({ centers: pickCenters, radii: pickRadii, orbits: precomputedOrbits.map((pre) => pre.orbit) });
     }
-  }, [activeYear, precomputedOrbits, filteredOrbits, dummy, color, onOrbitPickDataChange, pickMeshRef]);
+  }, [activeYear, precomputedOrbits, dummy, color, onOrbitPickDataChange, pickMeshRef]);
 
 
   if (orbits.length === 0) return null;

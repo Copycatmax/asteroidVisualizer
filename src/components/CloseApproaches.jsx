@@ -1,4 +1,4 @@
-import React, { useRef, useMemo, useEffect } from 'react';
+import React, { useRef, useMemo, useEffect, useState } from 'react';
 import * as THREE from 'three';
 
 const AU_TO_UNITS = 20;
@@ -37,10 +37,77 @@ function deterministicUnitVector(seedKey) {
   };
 }
 
+function normalizeDesignation(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[()]/g, ' ')
+    .replace(/[^a-z0-9]+/g, '')
+    .trim();
+}
+
+function stablePhaseOffset(value) {
+  const text = String(value ?? '');
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return ((hash >>> 0) / 4294967296) * Math.PI * 2;
+}
+
+function getEarthPositionAtYear(yearValue) {
+  const angle = (yearValue - 2000) * (Math.PI * 2);
+  return {
+    x: Math.cos(angle) * AU_TO_UNITS,
+    y: 0,
+    z: Math.sin(angle) * AU_TO_UNITS,
+  };
+}
+
+function getOrbitPositionAtYear(orbit, yearValue) {
+  const aAu = orbit[1];
+  const e = orbit[2];
+  const inc = orbit[3];
+  const om = orbit[4];
+  const w = orbit[5];
+
+  const periodYears = Math.sqrt(aAu * aAu * aAu);
+  const n = (Math.PI * 2) / Math.max(periodYears, 1e-6);
+  const phaseOffset = Number.isFinite(orbit[9]) ? orbit[9] : stablePhaseOffset(orbit[0]);
+  let M = n * (yearValue - 2000) + phaseOffset;
+  M = ((M % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+
+  let E = M;
+  for (let i = 0; i < 8; i++) {
+    E = E - (E - e * Math.sin(E) - M) / Math.max(1 - e * Math.cos(E), 1e-6);
+  }
+
+  const aUnits = aAu * AU_TO_UNITS;
+  const xp = aUnits * (Math.cos(E) - e);
+  const yp = aUnits * Math.sqrt(Math.max(1 - e * e, 0)) * Math.sin(E);
+
+  const cosw = Math.cos(w);
+  const sinw = Math.sin(w);
+  const cosi = Math.cos(inc);
+  const sini = Math.sin(inc);
+  const cosom = Math.cos(om);
+  const sinom = Math.sin(om);
+
+  const xPlane = xp * cosw - yp * sinw;
+  const yPlane = xp * sinw + yp * cosw;
+
+  const x = cosom * xPlane - sinom * cosi * yPlane;
+  const y = sinom * xPlane + cosom * cosi * yPlane;
+  const z = sini * yPlane;
+
+  return { x, y: z, z: y };
+}
+
 export function CloseApproaches({ data, earthPos, filterType = 'ALL', pickMeshRef: externalPickMeshRef, onApproachDataChange }) {
   const meshRef = useRef();
   const pickMeshRefInternal = useRef();
   const pickMeshRef = externalPickMeshRef || pickMeshRefInternal;
+  const [orbitIndexByName, setOrbitIndexByName] = useState(() => new Map());
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const color = useMemo(() => new THREE.Color(), []);
   const visibleData = useMemo(() => {
@@ -56,6 +123,43 @@ export function CloseApproaches({ data, earthPos, filterType = 'ALL', pickMeshRe
 
     return data;
   }, [data, filterType]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch('/data/orbits.json')
+      .then((res) => res.json())
+      .then((rows) => {
+        if (cancelled || !Array.isArray(rows)) return;
+
+        const byName = new Map();
+        for (let i = 0; i < rows.length; i++) {
+          const orbit = rows[i];
+          if (!orbit) continue;
+
+          const nameKey = normalizeDesignation(orbit[8]);
+          if (nameKey && !byName.has(nameKey)) {
+            byName.set(nameKey, orbit);
+          }
+
+          const idKey = normalizeDesignation(orbit[0]);
+          if (idKey && !byName.has(idKey)) {
+            byName.set(idKey, orbit);
+          }
+        }
+
+        setOrbitIndexByName(byName);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setOrbitIndexByName(new Map());
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!meshRef.current || !pickMeshRef.current) return;
@@ -81,9 +185,30 @@ export function CloseApproaches({ data, earthPos, filterType = 'ALL', pickMeshRe
         // Radius from earth perfectly clamped to just outside Earth's graphic (0.052) so true mathematical sub-orbital distances don't physically clip the visual model
         const r = Math.max(0.052, distAu * AU_TO_UNITS);
         
-        // Deterministic pseudo-direction keeps each event visually stable across renders.
-        const seedKey = `${event[0]}|${event[1]}|${event[2]}`;
-        const dir = deterministicUnitVector(seedKey);
+        // Prefer orbit-derived direction to reduce apparent angular mismatch with asteroid motion.
+        let dir = null;
+        const eventKey = normalizeDesignation(event[0]);
+        const matchingOrbit = orbitIndexByName.get(eventKey);
+
+        if (matchingOrbit) {
+          const yearAtEvent = 2000 + (event[1] - Date.UTC(2000, 0, 1)) / (365.25 * 24 * 60 * 60 * 1000);
+          const asteroidPos = getOrbitPositionAtYear(matchingOrbit, yearAtEvent);
+          const earthAtEvent = getEarthPositionAtYear(yearAtEvent);
+
+          const rx = asteroidPos.x - earthAtEvent.x;
+          const ry = asteroidPos.y - earthAtEvent.y;
+          const rz = asteroidPos.z - earthAtEvent.z;
+          const len = Math.hypot(rx, ry, rz);
+
+          if (len > 1e-6) {
+            dir = { x: rx / len, y: ry / len, z: rz / len };
+          }
+        }
+
+        if (!dir) {
+          const seedKey = `${event[0]}|${event[1]}|${event[2]}`;
+          dir = deterministicUnitVector(seedKey);
+        }
 
         const x = r * dir.x;
         const y = r * dir.y;
@@ -122,7 +247,7 @@ export function CloseApproaches({ data, earthPos, filterType = 'ALL', pickMeshRe
     if (onApproachDataChange) {
       onApproachDataChange(visibleData);
     }
-  }, [visibleData, dummy, color, onApproachDataChange, pickMeshRef]);
+  }, [visibleData, orbitIndexByName, dummy, color, onApproachDataChange, pickMeshRef]);
 
   if (visibleData.length === 0) return null;
 

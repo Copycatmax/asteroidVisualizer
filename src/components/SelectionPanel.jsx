@@ -15,6 +15,18 @@ export function SelectionPanel({ selection, onClose }) {
         {isOrbit && <div><strong>Eccentricity:</strong> {payload[2].toFixed(3)}</div>}
         {isOrbit && <div><strong>Magnitude (H):</strong> {payload[6].toFixed(2)}</div>}
         {isOrbit && <div><strong>Hazardous:</strong> {payload[7] ? 'YES' : 'NO'}</div>}
+        {isOrbit && (
+          <div>
+            <strong>Orbit Orientation:</strong>{' '}
+            {payload[10] === 2
+              ? 'Authoritative SBDB ephemeris'
+              : payload[10] === 1
+                ? 'Data-fitted from close approaches'
+                : 'Deterministic fallback (insufficient records)'}
+          </div>
+        )}
+        {isOrbit && Number.isFinite(payload[11]) && <div><strong>Fit Events:</strong> {payload[11]}</div>}
+        {isOrbit && Number.isFinite(payload[12]) && <div><strong>Fit RMSE:</strong> {payload[12].toFixed(4)} AU</div>}
 
         {!isOrbit && <div><strong>Name:</strong> {payload[0] || 'Unknown'}</div>}
         {!isOrbit && <div><strong>Date:</strong> {new Date(payload[1]).toLocaleString()}</div>}

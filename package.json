@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "enrich-ephemeris": "node scripts/enrich_ephemeris.js",
+    "process-data": "node scripts/process_data.js",
     "build": "vite build",
     "analyze": "vite build --mode analyze",
     "lint": "eslint .",
