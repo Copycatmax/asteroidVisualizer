@@ -14,6 +14,8 @@ export function useDataChunker(activeYear) {
   const inflightPrefetchRef = useRef(new Set());
 
   useEffect(() => {
+    let isCurrent = true;
+
     const prefetchYear = (year) => {
       if (year < 2015 || year > 2035) return;
       if (yearCacheRef.current.has(year)) return;
@@ -56,6 +58,7 @@ export function useDataChunker(activeYear) {
     fetch(`/data/approaches_${activeYear}.json`, { signal: controller.signal })
       .then((res) => parseChunkResponse(res, activeYear))
       .then((chunk) => {
+        if (!isCurrent) return;
         if (!Array.isArray(chunk)) {
           throw new Error(`Invalid chunk format for approaches_${activeYear}.json`);
         }
@@ -66,6 +69,7 @@ export function useDataChunker(activeYear) {
         prefetchYear(activeYear + 1);
       })
       .catch((err) => {
+        if (!isCurrent) return;
         if (err?.name === 'AbortError') return;
         console.error('Failed to load chunk for year', activeYear, err);
         setData([]);
@@ -73,6 +77,7 @@ export function useDataChunker(activeYear) {
       });
 
     return () => {
+      isCurrent = false;
       controller.abort();
     };
   }, [activeYear]);

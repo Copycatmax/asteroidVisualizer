@@ -391,6 +391,7 @@ export function SpaceCanvas({ approachesData, filterType, selectedOrbit, onSelec
     () => new THREE.Vector3(earthRadius * Math.cos(earthAngle), 0, earthRadius * Math.sin(earthAngle)),
     [earthAngle, earthRadius]
   );
+  const earthPosArray = useMemo(() => earthPos.toArray(), [earthPos]);
 
   // Dynamically lock OrbitControls to follow Earth (only when NOT recentered)
   useEffect(() => {
@@ -437,7 +438,7 @@ export function SpaceCanvas({ approachesData, filterType, selectedOrbit, onSelec
           </group>
 
           {/* Earth Tracking Model */}
-          <mesh position={earthPos.toArray()}>
+          <mesh position={earthPosArray}>
             <sphereGeometry args={[0.05, 32, 32]} />
             <meshStandardMaterial color="#2d5e9e" roughness={0.7} metalness={0.1} />
             <mesh>
@@ -481,7 +482,7 @@ export function SpaceCanvas({ approachesData, filterType, selectedOrbit, onSelec
           {filterType !== 'NONE' && approachesData && (
             <CloseApproaches
               data={approachesData}
-              earthPos={earthPos.toArray()}
+              earthPos={earthPosArray}
               filterType={filterType}
               pickMeshRef={approachPickMeshRef}
               onApproachDataChange={handleApproachDataChange}
