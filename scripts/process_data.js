@@ -28,14 +28,15 @@ async function processNearEarthAsteroids() {
         const H = parseFloat(data.H) || 20; // default magnitude if missing
         const pha = data.pha === 'True' ? 1 : 0;
         const spkid = parseInt(data.spkid) || 0;
+        const nameData = data.name?.trim() || data.pdes?.trim() || '';
 
         if (!isNaN(a) && !isNaN(e) && !isNaN(i)) {
           // Generate procedural Longitude of Ascending Node (om) and Argument of Periapsis (w)
           const om = Math.random() * Math.PI * 2;
           const w = Math.random() * Math.PI * 2;
           
-          // [0:spkid, 1:a, 2:e, 3:i_rad, 4:om_rad, 5:w_rad, 6:H, 7:pha_int]
-          asteroids.push([spkid, a, e, i, om, w, H, pha]);
+          // [0:spkid, 1:a, 2:e, 3:i_rad, 4:om_rad, 5:w_rad, 6:H, 7:pha_int, 8:name]
+          asteroids.push([spkid, a, e, i, om, w, H, pha, nameData]);
         }
       })
       .on('end', () => {

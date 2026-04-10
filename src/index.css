@@ -37,6 +37,15 @@ body {
   z-index: 0;
 }
 
+/* CRITICAL: Drei's <Html> creates outer wrapper divs as siblings of the <canvas>.
+   Without this, those wrappers capture pointer events before they reach WebGL. */
+.label-no-events {
+  pointer-events: none !important;
+}
+.label-no-events * {
+  pointer-events: none !important;
+}
+
 /* Glassmorphism HUD Panels */
 .hud-header {
   position: absolute;
@@ -172,6 +181,7 @@ body {
 .year-slider {
   -webkit-appearance: none;
   width: 100%;
+  flex: 1;
   height: 4px;
   background: rgba(255, 255, 255, 0.2);
   border-radius: 2px;
@@ -189,5 +199,173 @@ body {
   box-shadow: 0 0 10px #aaddff;
 }
 
+.year-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.year-step-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid rgba(170, 221, 255, 0.35);
+  background: rgba(170, 221, 255, 0.08);
+  color: #aaddff;
+  cursor: pointer;
+  font-size: 0.75rem;
+  line-height: 1;
+  transition: all 0.2s ease;
+}
+
+.year-step-btn:hover:enabled {
+  background: rgba(170, 221, 255, 0.2);
+  border-color: rgba(170, 221, 255, 0.6);
+}
+
+.year-step-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 .close-red { background-color: #ff0000; color: #ff0000; }
 .close-orange { background-color: #ffaa00; color: #ffaa00; }
+
+.filter-controls {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+.filter-controls button {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #94a3b8;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: all 0.2s;
+}
+.filter-controls button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.filter-controls button.active {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border-color: #fff;
+}
+.filter-controls button.active.pha {
+  background: rgba(255, 51, 51, 0.2);
+  color: var(--accent-pha);
+  border-color: var(--accent-pha);
+}
+.filter-controls button.active.safe {
+  background: rgba(170, 221, 255, 0.2);
+  color: var(--accent-safe);
+  border-color: var(--accent-safe);
+}
+
+/* Data Panel for Selected Asteroid */
+.data-panel-glass {
+  position: absolute;
+  top: 150px;
+  right: 24px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  padding: 20px;
+  border-radius: 12px;
+  width: 320px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
+  z-index: 20;
+}
+
+.data-panel-glass h2 {
+  font-size: 1.1rem;
+  margin-bottom: 12px;
+  color: #fff;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  padding-bottom: 8px;
+}
+
+.data-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+
+.data-grid div strong {
+  color: #aaddff;
+}
+
+.close-btn {
+  margin-top: 16px;
+  width: 100%;
+  background: rgba(255, 51, 51, 0.2);
+  border: 1px solid rgba(255, 51, 51, 0.4);
+  color: #ffcccc;
+  padding: 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.close-btn:hover {
+  background: rgba(255, 51, 51, 0.4);
+}
+
+/* Recenter Button */
+.recenter-btn {
+  background: rgba(170, 221, 255, 0.08);
+  border: 1px solid rgba(170, 221, 255, 0.25);
+  color: #aaddff;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  backdrop-filter: blur(8px);
+}
+.recenter-btn:hover {
+  background: rgba(170, 221, 255, 0.18);
+  border-color: rgba(170, 221, 255, 0.5);
+  box-shadow: 0 0 16px rgba(170, 221, 255, 0.15);
+}
+.recenter-btn:active {
+  transform: scale(0.97);
+}
+
+/* Legend Sections */
+.legend-section-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: #475569;
+  margin-top: 4px;
+}
+
+.legend-divider {
+  width: 100%;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 2px 0;
+}
+
+.close-green { background-color: #00ffaa; color: #00ffaa; }
+
+/* Recenter Button Container */
+.hud-actions {
+  position: absolute;
+  bottom: 24px;
+  right: 24px;
+  z-index: 10;
+  display: flex;
+  gap: 8px;
+}
