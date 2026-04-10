@@ -1,18 +1,9 @@
 import React, { useRef, useMemo } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
+import { stablePhaseOffset } from '../utils/orbitMath';
 
 const AU_TO_UNITS = 20;
-
-function stablePhaseOffset(value) {
-  const text = String(value ?? '');
-  let hash = 2166136261;
-  for (let i = 0; i < text.length; i++) {
-    hash ^= text.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return ((hash >>> 0) / 4294967296) * Math.PI * 2;
-}
 
 export function TrajectoryLines({ orbit, activeYear }) {
   const glowRef = useRef();

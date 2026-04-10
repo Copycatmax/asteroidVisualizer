@@ -2,6 +2,8 @@ import React, { useRef, useMemo, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
 import FilterWorker from '../workers/dataFilter.worker.js?worker';
+import { stablePhaseOffset } from '../utils/orbitMath';
+import { loadOrbitsRows } from '../utils/orbitData';
 
 const AU_TO_UNITS = 20;
 const LOD_DISTANCE_BANDS = [
@@ -18,15 +20,6 @@ function stableStringModulo(value, divisor) {
     hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
   }
   return hash % divisor;
-}
-
-function stablePhaseOffset(value) {
-  let hash = 2166136261;
-  for (let i = 0; i < value.length; i++) {
-    hash ^= value.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return ((hash >>> 0) / 4294967296) * Math.PI * 2;
 }
 
 function resolveLodStride(cameraDistance) {
@@ -131,8 +124,7 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
 
   // Fetch initial massive dataset
   useEffect(() => {
-    fetch('/data/orbits.json')
-      .then((res) => res.json())
+    loadOrbitsRows()
       .then((data) => {
         setOrbits(data);
         setFilteredOrbits(data);

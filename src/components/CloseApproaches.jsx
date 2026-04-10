@@ -1,9 +1,9 @@
 import React, { useRef, useMemo, useEffect, useState } from 'react';
 import * as THREE from 'three';
+import { stablePhaseOffset } from '../utils/orbitMath';
+import { loadOrbitIndexByName, normalizeDesignation } from '../utils/orbitData';
 
 const AU_TO_UNITS = 20;
-let orbitIndexByNameCache = null;
-let orbitIndexByNamePromise = null;
 
 function hashString(value) {
   let h = 2166136261;
@@ -37,24 +37,6 @@ function deterministicUnitVector(seedKey) {
     y: rXY * Math.sin(theta),
     z,
   };
-}
-
-function normalizeDesignation(value) {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/[()]/g, ' ')
-    .replace(/[^a-z0-9]+/g, '')
-    .trim();
-}
-
-function stablePhaseOffset(value) {
-  const text = String(value ?? '');
-  let hash = 2166136261;
-  for (let i = 0; i < text.length; i++) {
-    hash ^= text.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return ((hash >>> 0) / 4294967296) * Math.PI * 2;
 }
 
 function getEarthPositionAtYear(yearValue) {
@@ -103,58 +85,6 @@ function getOrbitPositionAtYear(orbit, yearValue) {
   const z = sini * yPlane;
 
   return { x, y: z, z: y };
-}
-
-function buildOrbitIndexByName(rows) {
-  const byName = new Map();
-
-  for (let i = 0; i < rows.length; i++) {
-    const orbit = rows[i];
-    if (!orbit) continue;
-
-    const nameKey = normalizeDesignation(orbit[8]);
-    if (nameKey && !byName.has(nameKey)) {
-      byName.set(nameKey, orbit);
-    }
-
-    const idKey = normalizeDesignation(orbit[0]);
-    if (idKey && !byName.has(idKey)) {
-      byName.set(idKey, orbit);
-    }
-  }
-
-  return byName;
-}
-
-function loadOrbitIndexByName() {
-  if (orbitIndexByNameCache) {
-    return Promise.resolve(orbitIndexByNameCache);
-  }
-
-  if (orbitIndexByNamePromise) {
-    return orbitIndexByNamePromise;
-  }
-
-  orbitIndexByNamePromise = fetch('/data/orbits.json')
-    .then((res) => {
-      if (!res.ok) {
-        throw new Error(`Failed to load orbits.json: HTTP ${res.status}`);
-      }
-      return res.json();
-    })
-    .then((rows) => {
-      if (!Array.isArray(rows)) {
-        throw new Error('Invalid orbits.json format');
-      }
-
-      orbitIndexByNameCache = buildOrbitIndexByName(rows);
-      return orbitIndexByNameCache;
-    })
-    .finally(() => {
-      orbitIndexByNamePromise = null;
-    });
-
-  return orbitIndexByNamePromise;
 }
 
 export function CloseApproaches({ data, earthPos, filterType = 'ALL', pickMeshRef: externalPickMeshRef, onApproachDataChange }) {

@@ -113,6 +113,9 @@ function CameraControlsRig({ controlsRef }) {
     const controls = localControlsRef.current;
     controlsRef.current = controls;
     return () => {
+      if (controls && typeof controls.dispose === 'function') {
+        controls.dispose();
+      }
       if (controlsRef.current === controls) {
         controlsRef.current = null;
       }
