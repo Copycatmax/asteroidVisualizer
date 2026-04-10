@@ -4,47 +4,89 @@ import { useThree } from '@react-three/fiber';
 import FilterWorker from '../workers/dataFilter.worker.js?worker';
 
 const AU_TO_UNITS = 20;
+const PICK_CONSUMED_KEY = '__avPickConsumed';
 
 // Manual click handler that bypasses R3F's event system entirely.
 // R3F's built-in raycasting conflicts with OrbitControls' pointer handling,
 // causing onClick/onPointerDown to never fire on InstancedMesh.
-function ManualClickDetector({ meshRef, filteredOrbits, onSelectOrbit }) {
+function ManualClickDetector({ pickMeshRef, filteredOrbits, onSelectOrbit }) {
   const { camera, gl } = useThree();
   const raycaster = useMemo(() => new THREE.Raycaster(), []);
 
   useEffect(() => {
     const canvas = gl.domElement;
+    let downX = 0;
+    let downY = 0;
+    let downPointerId = null;
 
-    const handleClick = (event) => {
-      if (!meshRef.current || !onSelectOrbit) return;
+    const pickAt = (clientX, clientY) => {
+      if (!pickMeshRef.current || !onSelectOrbit) return false;
+      if (filteredOrbits.length === 0 || pickMeshRef.current.count === 0) return false;
 
       // Convert mouse coordinates to Normalized Device Coordinates (-1 to +1)
       const rect = canvas.getBoundingClientRect();
       const mouse = new THREE.Vector2(
-        ((event.clientX - rect.left) / rect.width) * 2 - 1,
-        -((event.clientY - rect.top) / rect.height) * 2 + 1
+        ((clientX - rect.left) / rect.width) * 2 - 1,
+        -((clientY - rect.top) / rect.height) * 2 + 1
       );
 
       raycaster.setFromCamera(mouse, camera);
 
-      const intersects = raycaster.intersectObject(meshRef.current);
+      const intersects = raycaster.intersectObject(pickMeshRef.current);
       if (intersects.length > 0 && intersects[0].instanceId !== undefined) {
         const orbit = filteredOrbits[intersects[0].instanceId];
         if (orbit) {
           onSelectOrbit(orbit);
+          return true;
         }
       }
+
+      return false;
     };
 
-    canvas.addEventListener('click', handleClick);
-    return () => canvas.removeEventListener('click', handleClick);
-  }, [camera, gl, meshRef, filteredOrbits, onSelectOrbit, raycaster]);
+    const handlePointerDown = (event) => {
+      downPointerId = event.pointerId;
+      downX = event.clientX;
+      downY = event.clientY;
+    };
+
+    const handlePointerUp = (event) => {
+      if (downPointerId !== event.pointerId) return;
+      const dx = event.clientX - downX;
+      const dy = event.clientY - downY;
+      const moved = Math.hypot(dx, dy);
+      const pickToken = `${event.pointerId}:${event.timeStamp}`;
+
+      if (window[PICK_CONSUMED_KEY] === pickToken) {
+        downPointerId = null;
+        return;
+      }
+
+      // Ignore drags so OrbitControls still feels natural.
+      if (moved <= 5) {
+        const didPick = pickAt(event.clientX, event.clientY);
+        if (didPick) {
+          window[PICK_CONSUMED_KEY] = pickToken;
+        }
+      }
+      downPointerId = null;
+    };
+
+    canvas.addEventListener('pointerdown', handlePointerDown);
+    canvas.addEventListener('pointerup', handlePointerUp);
+
+    return () => {
+      canvas.removeEventListener('pointerdown', handlePointerDown);
+      canvas.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [camera, gl, pickMeshRef, filteredOrbits, onSelectOrbit, raycaster]);
 
   return null;
 }
 
-export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit }) {
+export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, activeYear }) {
   const meshRef = useRef();
+  const pickMeshRef = useRef();
   const workerRef = useRef(null);
 
   const [orbits, setOrbits] = useState([]);
@@ -108,15 +150,17 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit }) {
   }, [orbits, onSelectOrbit]);
 
   useEffect(() => {
-    if (!meshRef.current) return;
+    if (!meshRef.current || !pickMeshRef.current) return;
 
     if (filteredOrbits.length === 0) {
       meshRef.current.count = 0;
+      pickMeshRef.current.count = 0;
       return;
     }
 
     // Dynamically adjust count to avoid full remounts which trigger garbage collection frame drops
     meshRef.current.count = filteredOrbits.length;
+    pickMeshRef.current.count = filteredOrbits.length;
 
     for (let i = 0; i < filteredOrbits.length; i++) {
       const orbit = filteredOrbits[i];
@@ -128,9 +172,19 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit }) {
       const H = orbit[6];
       const pha = orbit[7] === 1;
 
-      const r = a * (1 - e);
-      const xp = r;
-      const yp = 0;
+      const periodYears = Math.sqrt(Math.pow(orbit[1], 3));
+      const n = (Math.PI * 2) / Math.max(periodYears, 1e-6);
+      let M = n * (activeYear - 2000);
+      M = ((M % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+
+      // Newton-Raphson solve for eccentric anomaly so positions evolve over time.
+      let E = M;
+      for (let k = 0; k < 8; k++) {
+        E = E - (E - e * Math.sin(E) - M) / Math.max(1 - e * Math.cos(E), 1e-6);
+      }
+
+      const xp = a * (Math.cos(E) - e);
+      const yp = a * Math.sqrt(Math.max(1 - e * e, 0)) * Math.sin(E);
 
       const cosw = Math.cos(w), sinw = Math.sin(w);
       const cosi = Math.cos(inc), sini = Math.sin(inc);
@@ -153,6 +207,11 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit }) {
       dummy.updateMatrix();
       meshRef.current.setMatrixAt(i, dummy.matrix);
 
+      // Selection shell uses enlarged transforms for easier picking without changing visuals.
+      dummy.scale.set(sizeScale * 3.2, sizeScale * 3.2, sizeScale * 3.2);
+      dummy.updateMatrix();
+      pickMeshRef.current.setMatrixAt(i, dummy.matrix);
+
       color.set(pha ? '#ff3333' : '#aaddff');
       meshRef.current.setColorAt(i, color);
     }
@@ -161,10 +220,13 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit }) {
     // when the camera is far from the origin (tracking Earth at ~20 units away)
     meshRef.current.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 2000);
     meshRef.current.geometry.computeBoundingSphere = () => {};
+    pickMeshRef.current.geometry.boundingSphere = meshRef.current.geometry.boundingSphere;
+    pickMeshRef.current.geometry.computeBoundingSphere = () => {};
 
     meshRef.current.instanceMatrix.needsUpdate = true;
     meshRef.current.instanceColor.needsUpdate = true;
-  }, [filteredOrbits, dummy, color]);
+    pickMeshRef.current.instanceMatrix.needsUpdate = true;
+  }, [activeYear, filteredOrbits, dummy, color]);
 
 
   if (orbits.length === 0) return null;
@@ -173,7 +235,7 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit }) {
     <>
       {/* Manual click detection — bypasses R3F's event system which conflicts with OrbitControls */}
       <ManualClickDetector
-        meshRef={meshRef}
+        pickMeshRef={pickMeshRef}
         filteredOrbits={filteredOrbits}
         onSelectOrbit={onSelectOrbit}
       />
@@ -181,6 +243,11 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit }) {
       <instancedMesh ref={meshRef} args={[null, null, orbits.length]} frustumCulled={false}>
         <sphereGeometry args={[1, 16, 16]} />
         <meshBasicMaterial toneMapped={false} transparent opacity={selectedOrbit ? 0.15 : 1} />
+      </instancedMesh>
+
+      <instancedMesh ref={pickMeshRef} args={[null, null, orbits.length]} frustumCulled={false}>
+        <sphereGeometry args={[1, 8, 8]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
       </instancedMesh>
     </>
   );

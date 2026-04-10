@@ -74,7 +74,7 @@ function CameraRecenter({ controlsRef, doRecenter, onRecenterDone, earthPos, isR
   return null;
 }
 
-export function SpaceCanvas({ approachesData, filterType, selectedOrbit, onSelectOrbit, activeYear, isRecentered }) {
+export function SpaceCanvas({ approachesData, filterType, selectedOrbit, onSelectOrbit, onSelectApproach, activeYear, isRecentered }) {
   const controlsRef = useRef();
   const [doRecenter, setDoRecenter] = useState(false);
 
@@ -164,9 +164,9 @@ export function SpaceCanvas({ approachesData, filterType, selectedOrbit, onSelec
               );
           })}
 
-          <AsteroidSwarm filterType={filterType} onSelectOrbit={onSelectOrbit} selectedOrbit={selectedOrbit} />
+          <AsteroidSwarm filterType={filterType} onSelectOrbit={onSelectOrbit} selectedOrbit={selectedOrbit} activeYear={activeYear} />
           {selectedOrbit && <TrajectoryLines orbit={selectedOrbit} activeYear={activeYear} />}
-          {filterType !== 'NONE' && approachesData && <CloseApproaches data={approachesData} earthPos={earthPos.toArray()} />}
+          {filterType !== 'NONE' && approachesData && <CloseApproaches data={approachesData} earthPos={earthPos.toArray()} filterType={filterType} onSelectApproach={onSelectApproach} />}
 
           {/* Selective Bloom: High luminance threshold so only emissive objects glow */}
           <EffectComposer>

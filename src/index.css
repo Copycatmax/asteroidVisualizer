@@ -181,6 +181,7 @@ body {
 .year-slider {
   -webkit-appearance: none;
   width: 100%;
+  flex: 1;
   height: 4px;
   background: rgba(255, 255, 255, 0.2);
   border-radius: 2px;
@@ -196,6 +197,35 @@ body {
   background: #aaddff;
   cursor: pointer;
   box-shadow: 0 0 10px #aaddff;
+}
+
+.year-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.year-step-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid rgba(170, 221, 255, 0.35);
+  background: rgba(170, 221, 255, 0.08);
+  color: #aaddff;
+  cursor: pointer;
+  font-size: 0.75rem;
+  line-height: 1;
+  transition: all 0.2s ease;
+}
+
+.year-step-btn:hover:enabled {
+  background: rgba(170, 221, 255, 0.2);
+  border-color: rgba(170, 221, 255, 0.6);
+}
+
+.year-step-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 .close-red { background-color: #ff0000; color: #ff0000; }

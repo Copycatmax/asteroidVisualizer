@@ -8,6 +8,7 @@ function App() {
   const [activeYear, setActiveYear] = useState(2024);
   const [filterType, setFilterType] = useState('ALL');
   const [selectedOrbit, setSelectedOrbit] = useState(null);
+  const [selectedApproach, setSelectedApproach] = useState(null);
   const [isRecentered, setIsRecentered] = useState(false);
   
   const { data, loading } = useDataChunker(activeYear);
@@ -20,6 +21,16 @@ function App() {
     setIsRecentered(false);
   }, []);
 
+  const handleSelectOrbit = useCallback((orbit) => {
+    setSelectedApproach(null);
+    setSelectedOrbit(orbit);
+  }, []);
+
+  const handleSelectApproach = useCallback((approach) => {
+    setSelectedOrbit(null);
+    setSelectedApproach(approach);
+  }, []);
+
   return (
     <div className="app-container">
       {/* UI Overlay */}
@@ -30,7 +41,7 @@ function App() {
           
           <div className="filter-controls">
             <button className={filterType === 'ALL' ? 'active' : ''} onClick={() => setFilterType('ALL')}>All</button>
-            <button className={filterType === 'NONE' ? 'active' : ''} onClick={() => { setFilterType('NONE'); setSelectedOrbit(null); }}>Hide Asteroids</button>
+            <button className={filterType === 'NONE' ? 'active' : ''} onClick={() => { setFilterType('NONE'); setSelectedOrbit(null); setSelectedApproach(null); }}>Hide Asteroids</button>
             <button className={filterType === 'PHA' ? 'active pha' : ''} onClick={() => setFilterType('PHA')}>Collision Risks (PHA)</button>
             <button className={filterType === 'SAFE' ? 'active safe' : ''} onClick={() => setFilterType('SAFE')}>Safe Orbits</button>
           </div>
@@ -82,6 +93,21 @@ function App() {
                 <div><strong>Hazardous:</strong> {selectedOrbit[7] ? 'YES' : 'NO'}</div>
             </div>
             <button className="close-btn" onClick={() => setSelectedOrbit(null)}>Close</button>
+          </div>
+          )}
+
+          {selectedApproach && (
+          <div className="data-panel-glass">
+            <h2>Close Approach Event</h2>
+            <div className="data-grid">
+              <div><strong>Name:</strong> {selectedApproach[0] || 'Unknown'}</div>
+              <div><strong>Date:</strong> {new Date(selectedApproach[1]).toLocaleString()}</div>
+              <div><strong>Distance:</strong> {selectedApproach[2].toFixed(5)} AU</div>
+              <div><strong>Velocity:</strong> {selectedApproach[3].toFixed(2)} km/s</div>
+              <div><strong>Magnitude (H):</strong> {selectedApproach[4].toFixed(2)}</div>
+              <div><strong>Threat:</strong> {selectedApproach[2] <= 0.01 ? 'CRITICAL' : selectedApproach[2] <= 0.05 ? 'WARNING' : 'SAFE'}</div>
+            </div>
+            <button className="close-btn" onClick={() => setSelectedApproach(null)}>Close</button>
         </div>
       )}
       
@@ -90,7 +116,8 @@ function App() {
         approachesData={data} 
         filterType={filterType} 
         selectedOrbit={selectedOrbit} 
-        onSelectOrbit={setSelectedOrbit}
+        onSelectOrbit={handleSelectOrbit}
+        onSelectApproach={handleSelectApproach}
         activeYear={activeYear}
         isRecentered={isRecentered}
       />
