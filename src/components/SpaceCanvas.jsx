@@ -5,7 +5,6 @@ import { CloseApproaches } from './CloseApproaches';
 import { TrajectoryLines } from './TrajectoryLines';
 import * as THREE from 'three';
 import { OrbitControls as ThreeOrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import gsap from 'gsap';
 
 extend({ ThreeOrbitControls });
 
@@ -17,6 +16,62 @@ const planets = [
 ];
 
 const DEFAULT_SUN_VIEW = { x: 0, y: 35, z: 50 };
+
+function LabelSprite({ text, position, color = '#e2e8f0', fontSize = 34, height = 0.7 }) {
+  const { texture, aspect } = useMemo(() => {
+    const canvas = document.createElement('canvas');
+    const initialContext = canvas.getContext('2d');
+    if (!initialContext) {
+      const fallbackTexture = new THREE.CanvasTexture(canvas);
+      return { texture: fallbackTexture, aspect: 2 };
+    }
+
+    const paddingX = 20;
+    const paddingY = 12;
+    const font = `700 ${fontSize}px system-ui`;
+    initialContext.font = font;
+
+    const width = Math.ceil(initialContext.measureText(text).width + paddingX * 2);
+    const labelHeight = Math.ceil(fontSize + paddingY * 2);
+    canvas.width = width;
+    canvas.height = labelHeight;
+
+    const context = canvas.getContext('2d');
+    if (!context) {
+      const fallbackTexture = new THREE.CanvasTexture(canvas);
+      return { texture: fallbackTexture, aspect: 2 };
+    }
+
+    context.font = font;
+    context.textBaseline = 'middle';
+    context.textAlign = 'center';
+    context.fillStyle = 'rgba(0, 0, 0, 0.45)';
+    context.fillRect(0, 0, width, labelHeight);
+    context.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    context.lineWidth = 2;
+    context.strokeRect(1, 1, width - 2, labelHeight - 2);
+    context.fillStyle = color;
+    context.fillText(text, width / 2, labelHeight / 2);
+
+    const spriteTexture = new THREE.CanvasTexture(canvas);
+    spriteTexture.needsUpdate = true;
+    spriteTexture.minFilter = THREE.LinearFilter;
+    spriteTexture.magFilter = THREE.LinearFilter;
+    spriteTexture.generateMipmaps = false;
+
+    return { texture: spriteTexture, aspect: width / labelHeight };
+  }, [text, color, fontSize]);
+
+  useEffect(() => {
+    return () => texture.dispose();
+  }, [texture]);
+
+  return (
+    <sprite position={position} scale={[height * aspect, height, 1]} renderOrder={20}>
+      <spriteMaterial map={texture} transparent depthWrite={false} depthTest={false} toneMapped={false} />
+    </sprite>
+  );
+}
 
 function StarField() {
   const starCount = 3500;
@@ -217,25 +272,36 @@ function CameraRecenter({ controlsRef, doRecenter, onRecenterDone, earthPos, isR
     if (!doRecenter || !controlsRef.current) return;
 
     const target = controlsRef.current.target;
-    const tl = gsap.timeline({
-      onComplete: () => onRecenterDone(),
-      onUpdate: () => controlsRef.current.update()
+    let isDisposed = false;
+    let timeline = null;
+
+    import('gsap').then((module) => {
+      if (isDisposed || !controlsRef.current) return;
+      const gsap = module.default;
+
+      timeline = gsap.timeline({
+        onComplete: () => onRecenterDone(),
+        onUpdate: () => controlsRef.current.update()
+      });
+
+      timeline.to(target, {
+        x: 0, y: 0, z: 0,
+        duration: 1.5,
+        ease: 'power2.inOut'
+      }, 0);
+      timeline.to(camera.position, {
+        x: DEFAULT_SUN_VIEW.x,
+        y: DEFAULT_SUN_VIEW.y,
+        z: DEFAULT_SUN_VIEW.z,
+        duration: 1.5,
+        ease: 'power2.inOut'
+      }, 0);
     });
 
-    tl.to(target, {
-      x: 0, y: 0, z: 0,
-      duration: 1.5,
-      ease: 'power2.inOut'
-    }, 0);
-    tl.to(camera.position, {
-      x: DEFAULT_SUN_VIEW.x,
-      y: DEFAULT_SUN_VIEW.y,
-      z: DEFAULT_SUN_VIEW.z,
-      duration: 1.5,
-      ease: 'power2.inOut'
-    }, 0);
-
-    return () => tl.kill();
+    return () => {
+      isDisposed = true;
+      if (timeline) timeline.kill();
+    };
   }, [camera, controlsRef, doRecenter, onRecenterDone]);
 
   // Animate back to Earth when un-recentered
@@ -243,24 +309,35 @@ function CameraRecenter({ controlsRef, doRecenter, onRecenterDone, earthPos, isR
     if (isRecentered || !controlsRef.current) return;
 
     const target = controlsRef.current.target;
-    const tl = gsap.timeline({
-      onUpdate: () => controlsRef.current.update()
+    let isDisposed = false;
+    let timeline = null;
+
+    import('gsap').then((module) => {
+      if (isDisposed || !controlsRef.current) return;
+      const gsap = module.default;
+
+      timeline = gsap.timeline({
+        onUpdate: () => controlsRef.current.update()
+      });
+
+      timeline.to(target, {
+        x: earthPos.x, y: earthPos.y, z: earthPos.z,
+        duration: 1.2,
+        ease: 'power2.inOut'
+      }, 0);
+      timeline.to(camera.position, {
+        x: earthPos.x,
+        y: 20,
+        z: earthPos.z + 30,
+        duration: 1.2,
+        ease: 'power2.inOut'
+      }, 0);
     });
 
-    tl.to(target, {
-      x: earthPos.x, y: earthPos.y, z: earthPos.z,
-      duration: 1.2,
-      ease: 'power2.inOut'
-    }, 0);
-    tl.to(camera.position, {
-      x: earthPos.x,
-      y: 20,
-      z: earthPos.z + 30,
-      duration: 1.2,
-      ease: 'power2.inOut'
-    }, 0);
-
-    return () => tl.kill();
+    return () => {
+      isDisposed = true;
+      if (timeline) timeline.kill();
+    };
   }, [camera, controlsRef, earthPos.x, earthPos.y, earthPos.z, isRecentered]);
 
   return null;
@@ -329,6 +406,7 @@ export function SpaceCanvas({ approachesData, filterType, selectedOrbit, onSelec
                 <sphereGeometry args={[1.5, 32, 32]} />
                 <meshBasicMaterial color="#ffcc00" />
               </mesh>
+              <LabelSprite text="Sun" position={[0, 2.8, 0]} color="#ffdd66" height={0.9} />
               {/* Earth Orbit Line */}
               <mesh rotation={[-Math.PI/2, 0, 0]}>
                   <ringGeometry args={[earthRadius - 0.05, earthRadius + 0.05, 128]} />
@@ -345,6 +423,7 @@ export function SpaceCanvas({ approachesData, filterType, selectedOrbit, onSelec
                 <meshBasicMaterial color="#ffffff" wireframe transparent opacity={0.3} />
             </mesh>
           </mesh>
+          <LabelSprite text="Earth" position={[earthPos.x, 0.9, earthPos.z]} color="#aaddff" height={0.7} />
 
           {/* Scale Reference Planets */}
           {planets.map(p => {
@@ -362,6 +441,7 @@ export function SpaceCanvas({ approachesData, filterType, selectedOrbit, onSelec
                           <sphereGeometry args={[p.size, 32, 32]} />
                           <meshStandardMaterial color={p.color} roughness={0.7} metalness={0.1} />
                         </mesh>
+                        <LabelSprite text={p.name} position={[px, 0.45, pz]} color="#f8fafc" height={0.58} />
                   </group>
               );
           })}

@@ -4,8 +4,28 @@ export function useDataChunker(activeYear) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const yearCacheRef = useRef(new Map());
+  const inflightPrefetchRef = useRef(new Set());
 
   useEffect(() => {
+    const prefetchYear = (year) => {
+      if (year < 2015 || year > 2035) return;
+      if (yearCacheRef.current.has(year)) return;
+      if (inflightPrefetchRef.current.has(year)) return;
+
+      inflightPrefetchRef.current.add(year);
+      fetch(`/data/approaches_${year}.json`)
+        .then((res) => res.json())
+        .then((chunk) => {
+          yearCacheRef.current.set(year, chunk);
+        })
+        .catch(() => {
+          // Best-effort optimization: ignore prefetch errors and rely on foreground fetch.
+        })
+        .finally(() => {
+          inflightPrefetchRef.current.delete(year);
+        });
+    };
+
     if (!activeYear || activeYear < 2015 || activeYear > 2035) {
       setData([]);
       setLoading(false);
@@ -16,6 +36,8 @@ export function useDataChunker(activeYear) {
     if (cached) {
       setData(cached);
       setLoading(false);
+      prefetchYear(activeYear - 1);
+      prefetchYear(activeYear + 1);
       return;
     }
 
@@ -27,6 +49,8 @@ export function useDataChunker(activeYear) {
         yearCacheRef.current.set(activeYear, chunk);
         setData(chunk);
         setLoading(false);
+        prefetchYear(activeYear - 1);
+        prefetchYear(activeYear + 1);
       })
       .catch((err) => {
         if (err?.name === 'AbortError') return;

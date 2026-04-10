@@ -26,6 +26,41 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
     return byId;
   }, [orbits]);
 
+  const precomputedOrbits = useMemo(() => {
+    return filteredOrbits.map((orbit) => {
+      const aAu = orbit[1];
+      const e = orbit[2];
+      const inc = orbit[3];
+      const om = orbit[4];
+      const w = orbit[5];
+      const H = orbit[6];
+      const pha = orbit[7] === 1;
+
+      const periodYears = Math.sqrt(aAu * aAu * aAu);
+      const n = (Math.PI * 2) / Math.max(periodYears, 1e-6);
+      const aUnits = aAu * AU_TO_UNITS;
+
+      let sizeScale = Math.max(0.04, Math.pow(10, (20 - H) / 10) * 0.008);
+      if (pha) sizeScale *= 1.5;
+
+      return {
+        orbit,
+        pha,
+        e,
+        n,
+        aUnits,
+        sqrtOneMinusESq: Math.sqrt(Math.max(1 - e * e, 0)),
+        cosw: Math.cos(w),
+        sinw: Math.sin(w),
+        cosi: Math.cos(inc),
+        sini: Math.sin(inc),
+        cosom: Math.cos(om),
+        sinom: Math.sin(om),
+        sizeScale,
+      };
+    });
+  }, [filteredOrbits]);
+
   // Fetch initial massive dataset
   useEffect(() => {
     fetch('/data/orbits.json')
@@ -92,7 +127,7 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
   useEffect(() => {
     if (!meshRef.current || !pickMeshRef.current) return;
 
-    if (filteredOrbits.length === 0) {
+    if (precomputedOrbits.length === 0) {
       meshRef.current.count = 0;
       pickMeshRef.current.count = 0;
       pickCentersRef.current = null;
@@ -104,61 +139,46 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
     }
 
     // Dynamically adjust count to avoid full remounts which trigger garbage collection frame drops
-    meshRef.current.count = filteredOrbits.length;
-    pickMeshRef.current.count = filteredOrbits.length;
-    const pickCenters = new Float32Array(filteredOrbits.length * 3);
-    const pickRadii = new Float32Array(filteredOrbits.length);
+    meshRef.current.count = precomputedOrbits.length;
+    pickMeshRef.current.count = precomputedOrbits.length;
+    const pickCenters = new Float32Array(precomputedOrbits.length * 3);
+    const pickRadii = new Float32Array(precomputedOrbits.length);
+    const yearOffset = activeYear - 2000;
 
-    for (let i = 0; i < filteredOrbits.length; i++) {
-      const orbit = filteredOrbits[i];
-      const a = orbit[1] * AU_TO_UNITS;
-      const e = orbit[2];
-      const inc = orbit[3];
-      const om = orbit[4];
-      const w = orbit[5];
-      const H = orbit[6];
-      const pha = orbit[7] === 1;
+    for (let i = 0; i < precomputedOrbits.length; i++) {
+      const pre = precomputedOrbits[i];
 
-      const periodYears = Math.sqrt(Math.pow(orbit[1], 3));
-      const n = (Math.PI * 2) / Math.max(periodYears, 1e-6);
-      let M = n * (activeYear - 2000);
+      let M = pre.n * yearOffset;
       M = ((M % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
 
       // Newton-Raphson solve for eccentric anomaly so positions evolve over time.
       let E = M;
       for (let k = 0; k < 8; k++) {
-        E = E - (E - e * Math.sin(E) - M) / Math.max(1 - e * Math.cos(E), 1e-6);
+        E = E - (E - pre.e * Math.sin(E) - M) / Math.max(1 - pre.e * Math.cos(E), 1e-6);
       }
 
-      const xp = a * (Math.cos(E) - e);
-      const yp = a * Math.sqrt(Math.max(1 - e * e, 0)) * Math.sin(E);
+      const xp = pre.aUnits * (Math.cos(E) - pre.e);
+      const yp = pre.aUnits * pre.sqrtOneMinusESq * Math.sin(E);
 
-      const cosw = Math.cos(w), sinw = Math.sin(w);
-      const cosi = Math.cos(inc), sini = Math.sin(inc);
-      const cosom = Math.cos(om), sinom = Math.sin(om);
+      const xPlane = xp * pre.cosw - yp * pre.sinw;
+      const yPlane = xp * pre.sinw + yp * pre.cosw;
 
-      const xPlane = xp * cosw - yp * sinw;
-      const yPlane = xp * sinw + yp * cosw;
-
-      const x = cosom * xPlane - sinom * cosi * yPlane;
-      const y = sinom * xPlane + cosom * cosi * yPlane;
-      const z = sini * yPlane;
+      const x = pre.cosom * xPlane - pre.sinom * pre.cosi * yPlane;
+      const y = pre.sinom * xPlane + pre.cosom * pre.cosi * yPlane;
+      const z = pre.sini * yPlane;
 
       dummy.position.set(x, z, y);
       const cx = x;
       const cy = z;
       const cz = y;
 
-      // Logarithmic scale derived from Absolute Magnitude - sized up artificially to ensure raycaster hitboxes are clickable!
-      let sizeScale = Math.max(0.04, Math.pow(10, (20 - H) / 10) * 0.008);
-      if (pha) sizeScale *= 1.5;
-      dummy.scale.set(sizeScale, sizeScale, sizeScale);
+      dummy.scale.set(pre.sizeScale, pre.sizeScale, pre.sizeScale);
 
       dummy.updateMatrix();
       meshRef.current.setMatrixAt(i, dummy.matrix);
 
       // Selection shell uses enlarged transforms for easier picking without changing visuals.
-      dummy.scale.set(sizeScale * 3.2, sizeScale * 3.2, sizeScale * 3.2);
+      dummy.scale.set(pre.sizeScale * 3.2, pre.sizeScale * 3.2, pre.sizeScale * 3.2);
       dummy.updateMatrix();
       pickMeshRef.current.setMatrixAt(i, dummy.matrix);
 
@@ -166,9 +186,9 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
       pickCenters[base] = cx;
       pickCenters[base + 1] = cy;
       pickCenters[base + 2] = cz;
-      pickRadii[i] = sizeScale * 3.2;
+      pickRadii[i] = pre.sizeScale * 3.2;
 
-      color.set(pha ? '#ff3333' : '#aaddff');
+      color.set(pre.pha ? '#ff3333' : '#aaddff');
       meshRef.current.setColorAt(i, color);
     }
 
@@ -187,7 +207,7 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
     if (onOrbitPickDataChange) {
       onOrbitPickDataChange({ centers: pickCenters, radii: pickRadii, orbits: filteredOrbits });
     }
-  }, [activeYear, filteredOrbits, dummy, color, onOrbitPickDataChange, pickMeshRef]);
+  }, [activeYear, precomputedOrbits, filteredOrbits, dummy, color, onOrbitPickDataChange, pickMeshRef]);
 
 
   if (orbits.length === 0) return null;
@@ -195,12 +215,12 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
   return (
     <>
       <instancedMesh ref={meshRef} args={[null, null, orbits.length]} frustumCulled={false}>
-        <sphereGeometry args={[1, 16, 16]} />
+        <sphereGeometry args={[1, 8, 8]} />
         <meshBasicMaterial toneMapped={false} transparent opacity={selectedOrbit ? 0.15 : 1} />
       </instancedMesh>
 
       <instancedMesh ref={pickMeshRef} args={[null, null, orbits.length]} frustumCulled={false}>
-        <sphereGeometry args={[1, 8, 8]} />
+        <sphereGeometry args={[1, 6, 6]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
       </instancedMesh>
     </>

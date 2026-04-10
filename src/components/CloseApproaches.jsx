@@ -129,12 +129,12 @@ export function CloseApproaches({ data, earthPos, filterType = 'ALL', pickMeshRe
   return (
     <group position={earthPos || [0, 0, 0]}>
       <instancedMesh ref={meshRef} args={[null, null, visibleData.length]}>
-        <sphereGeometry args={[1, 16, 16]} />
+        <sphereGeometry args={[1, 8, 8]} />
         <meshBasicMaterial toneMapped={false} />
       </instancedMesh>
 
       <instancedMesh ref={pickMeshRef} args={[null, null, visibleData.length]} frustumCulled={false}>
-        <sphereGeometry args={[1, 8, 8]} />
+        <sphereGeometry args={[1, 6, 6]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
       </instancedMesh>
     </group>
