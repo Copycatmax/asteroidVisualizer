@@ -123,9 +123,6 @@ function CameraControlsRig({ controlsRef, onControlsReady }) {
       if (controlsRef.current === controls) {
         controlsRef.current = null;
       }
-      if (onControlsReady) {
-        onControlsReady(false);
-      }
     };
   }, [controlsRef, onControlsReady]);
 
@@ -171,19 +168,11 @@ function UnifiedPicker({ orbitPickMeshRef, orbitCentersRef, orbitRadiiRef, orbit
 
       raycaster.setFromCamera(mouse, camera);
 
-      const intersects = raycaster.intersectObject(orbitPickMeshRef.current);
-      if (intersects.length > 0 && intersects[0].instanceId !== undefined) {
-        const orbit = orbits[intersects[0].instanceId];
-        if (orbit) {
-          onSelectOrbit(orbit);
-          return true;
-        }
-      }
-
       const centers = orbitCentersRef.current;
       const radii = orbitRadiiRef.current;
       if (!centers || !radii) return false;
 
+      const distanceScaleSq = 0.0035 * 0.0035;
       let bestIndex = -1;
       let bestScore = Infinity;
 
@@ -192,9 +181,9 @@ function UnifiedPicker({ orbitPickMeshRef, orbitCentersRef, orbitRadiiRef, orbit
         tempPoint.set(centers[base], centers[base + 1], centers[base + 2]);
 
         const rayDistSq = raycaster.ray.distanceSqToPoint(tempPoint);
-        const camDist = camera.position.distanceTo(tempPoint);
-        const adaptiveRadius = Math.max(radii[i], camDist * 0.0035);
-        const limitSq = adaptiveRadius * adaptiveRadius;
+        const camDistSq = camera.position.distanceToSquared(tempPoint);
+        const baseRadiusSq = radii[i] * radii[i];
+        const limitSq = Math.max(baseRadiusSq, camDistSq * distanceScaleSq);
 
         if (rayDistSq <= limitSq) {
           const score = rayDistSq / Math.max(limitSq, 1e-9);

@@ -286,13 +286,6 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
       meshRef.current.setColorAt(i, color);
     }
 
-    // CRITICAL: Override bounding sphere so raycaster's broad-phase check passes
-    // when the camera is far from the origin (tracking Earth at ~20 units away)
-    meshRef.current.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 2000);
-    meshRef.current.geometry.computeBoundingSphere = () => {};
-    pickMeshRef.current.geometry.boundingSphere = meshRef.current.geometry.boundingSphere;
-    pickMeshRef.current.geometry.computeBoundingSphere = () => {};
-
     if (typeof meshRef.current.instanceMatrix.clearUpdateRanges === 'function' && typeof meshRef.current.instanceMatrix.addUpdateRange === 'function') {
       meshRef.current.instanceMatrix.clearUpdateRanges();
       meshRef.current.instanceMatrix.addUpdateRange(0, precomputedOrbits.length * 16);
