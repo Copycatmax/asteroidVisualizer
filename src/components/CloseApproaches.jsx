@@ -207,9 +207,7 @@ export function CloseApproaches({ data, earthPos, filterType = 'ALL', pickMeshRe
       // Ensure instanced raycasting broad-phase checks include translated markers.
       const sharedBounds = new THREE.Sphere(new THREE.Vector3(0, 0, 0), maxPickDistance);
       meshRef.current.geometry.boundingSphere = sharedBounds;
-      meshRef.current.geometry.computeBoundingSphere = () => {};
       pickMeshRef.current.geometry.boundingSphere = sharedBounds;
-      pickMeshRef.current.geometry.computeBoundingSphere = () => {};
     
     meshRef.current.instanceMatrix.needsUpdate = true;
     meshRef.current.instanceColor.needsUpdate = true;

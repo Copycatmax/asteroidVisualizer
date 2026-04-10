@@ -39,8 +39,6 @@ function ensureFloat32Capacity(buffer, requiredLength) {
 export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, activeYear, searchTerm, pickMeshRef: externalPickMeshRef, onOrbitPickDataChange }) {
   const meshRef = useRef();
   const pickMeshRefInternal = useRef();
-  const pickCentersRef = useRef(null);
-  const pickRadiiRef = useRef(null);
   const pickCentersBufferRef = useRef(new Float32Array(0));
   const pickRadiiBufferRef = useRef(new Float32Array(0));
 
@@ -219,8 +217,6 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
     if (precomputedOrbits.length === 0) {
       meshRef.current.count = 0;
       pickMeshRef.current.count = 0;
-      pickCentersRef.current = null;
-      pickRadiiRef.current = null;
       if (onOrbitPickDataChange) {
         onOrbitPickDataChange({ centers: null, radii: null, orbits: [] });
       }
@@ -302,8 +298,6 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
     meshRef.current.instanceMatrix.needsUpdate = true;
     meshRef.current.instanceColor.needsUpdate = true;
     pickMeshRef.current.instanceMatrix.needsUpdate = true;
-    pickCentersRef.current = pickCenters;
-    pickRadiiRef.current = pickRadii;
     if (onOrbitPickDataChange) {
         onOrbitPickDataChange({ centers: pickCenters, radii: pickRadii, orbits: precomputedOrbits.map((pre) => pre.orbit) });
     }
