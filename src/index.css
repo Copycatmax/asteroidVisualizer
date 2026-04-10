@@ -87,6 +87,19 @@ body {
   text-transform: uppercase;
 }
 
+.search-wrap {
+  margin-top: 12px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  border-radius: 4px;
+}
+
 .legend-glass {
   background: var(--glass-bg);
   backdrop-filter: blur(12px);
@@ -143,6 +156,11 @@ body {
   letter-spacing: 1px;
   color: #64748b;
   text-transform: uppercase;
+}
+
+.status-inline {
+  margin-top: 12px;
+  display: inline-block;
 }
 
 /* Timeline Scrubber */
