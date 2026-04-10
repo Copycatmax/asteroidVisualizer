@@ -7,8 +7,7 @@ import './index.css';
 function App() {
   const [activeYear, setActiveYear] = useState(2024);
   const [filterType, setFilterType] = useState('ALL');
-  const [selectedOrbit, setSelectedOrbit] = useState(null);
-  const [selectedApproach, setSelectedApproach] = useState(null);
+  const [selection, setSelection] = useState(null);
   const [isRecentered, setIsRecentered] = useState(false);
   
   const { data, loading } = useDataChunker(activeYear);
@@ -22,14 +21,15 @@ function App() {
   }, []);
 
   const handleSelectOrbit = useCallback((orbit) => {
-    setSelectedApproach(null);
-    setSelectedOrbit(orbit);
+    setSelection({ kind: 'orbit', payload: orbit });
   }, []);
 
   const handleSelectApproach = useCallback((approach) => {
-    setSelectedOrbit(null);
-    setSelectedApproach(approach);
+    setSelection({ kind: 'approach', payload: approach });
   }, []);
+
+  const selectedOrbit = selection?.kind === 'orbit' ? selection.payload : null;
+  const selectedApproach = selection?.kind === 'approach' ? selection.payload : null;
 
   return (
     <div className="app-container">
@@ -41,7 +41,7 @@ function App() {
           
           <div className="filter-controls">
             <button className={filterType === 'ALL' ? 'active' : ''} onClick={() => setFilterType('ALL')}>All</button>
-            <button className={filterType === 'NONE' ? 'active' : ''} onClick={() => { setFilterType('NONE'); setSelectedOrbit(null); setSelectedApproach(null); }}>Hide Asteroids</button>
+            <button className={filterType === 'NONE' ? 'active' : ''} onClick={() => { setFilterType('NONE'); setSelection(null); }}>Hide Asteroids</button>
             <button className={filterType === 'PHA' ? 'active pha' : ''} onClick={() => setFilterType('PHA')}>Collision Risks (PHA)</button>
             <button className={filterType === 'SAFE' ? 'active safe' : ''} onClick={() => setFilterType('SAFE')}>Safe Orbits</button>
           </div>
@@ -82,32 +82,24 @@ function App() {
       </header>
 
       {/* Selected Data HUD */}
-      {selectedOrbit && (
+      {selection && (
         <div className="data-panel-glass">
-            <h2>Asteroid Data (SPK-ID: {selectedOrbit[0]})</h2>
-            {selectedOrbit[8] && <div style={{color: '#fff', marginBottom: '8px'}}><strong>Name:</strong> {selectedOrbit[8]}</div>}
+            <h2>{selection.kind === 'orbit' ? `Asteroid Data (SPK-ID: ${selectedOrbit[0]})` : 'Close Approach Event'}</h2>
             <div className="data-grid">
-                <div><strong>Orbit (a):</strong> {selectedOrbit[1].toFixed(3)} AU</div>
-                <div><strong>Eccentricity:</strong> {selectedOrbit[2].toFixed(3)}</div>
-                <div><strong>Magnitude (H):</strong> {selectedOrbit[6].toFixed(2)}</div>
-                <div><strong>Hazardous:</strong> {selectedOrbit[7] ? 'YES' : 'NO'}</div>
-            </div>
-            <button className="close-btn" onClick={() => setSelectedOrbit(null)}>Close</button>
-          </div>
-          )}
+                {selection.kind === 'orbit' && selectedOrbit[8] && <div><strong>Name:</strong> {selectedOrbit[8]}</div>}
+                {selection.kind === 'orbit' && <div><strong>Orbit (a):</strong> {selectedOrbit[1].toFixed(3)} AU</div>}
+                {selection.kind === 'orbit' && <div><strong>Eccentricity:</strong> {selectedOrbit[2].toFixed(3)}</div>}
+                {selection.kind === 'orbit' && <div><strong>Magnitude (H):</strong> {selectedOrbit[6].toFixed(2)}</div>}
+                {selection.kind === 'orbit' && <div><strong>Hazardous:</strong> {selectedOrbit[7] ? 'YES' : 'NO'}</div>}
 
-          {selectedApproach && (
-          <div className="data-panel-glass">
-            <h2>Close Approach Event</h2>
-            <div className="data-grid">
-              <div><strong>Name:</strong> {selectedApproach[0] || 'Unknown'}</div>
-              <div><strong>Date:</strong> {new Date(selectedApproach[1]).toLocaleString()}</div>
-              <div><strong>Distance:</strong> {selectedApproach[2].toFixed(5)} AU</div>
-              <div><strong>Velocity:</strong> {selectedApproach[3].toFixed(2)} km/s</div>
-              <div><strong>Magnitude (H):</strong> {selectedApproach[4].toFixed(2)}</div>
-              <div><strong>Threat:</strong> {selectedApproach[2] <= 0.01 ? 'CRITICAL' : selectedApproach[2] <= 0.05 ? 'WARNING' : 'SAFE'}</div>
+                {selection.kind === 'approach' && <div><strong>Name:</strong> {selectedApproach[0] || 'Unknown'}</div>}
+                {selection.kind === 'approach' && <div><strong>Date:</strong> {new Date(selectedApproach[1]).toLocaleString()}</div>}
+                {selection.kind === 'approach' && <div><strong>Distance:</strong> {selectedApproach[2].toFixed(5)} AU</div>}
+                {selection.kind === 'approach' && <div><strong>Velocity:</strong> {selectedApproach[3].toFixed(2)} km/s</div>}
+                {selection.kind === 'approach' && <div><strong>Magnitude (H):</strong> {selectedApproach[4].toFixed(2)}</div>}
+                {selection.kind === 'approach' && <div><strong>Threat:</strong> {selectedApproach[2] <= 0.01 ? 'CRITICAL' : selectedApproach[2] <= 0.05 ? 'WARNING' : 'SAFE'}</div>}
             </div>
-            <button className="close-btn" onClick={() => setSelectedApproach(null)}>Close</button>
+            <button className="close-btn" onClick={() => setSelection(null)}>Close</button>
         </div>
       )}
       
