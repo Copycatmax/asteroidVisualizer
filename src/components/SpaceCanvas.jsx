@@ -17,6 +17,133 @@ const planets = [
 
 const DEFAULT_SUN_VIEW = { x: 0, y: 35, z: 50 };
 
+function UnifiedPicker({ orbitPickMeshRef, orbitCentersRef, orbitRadiiRef, orbitDataRef, approachPickMeshRef, approachDataRef, onSelectOrbit, onSelectApproach }) {
+  const { camera, gl } = useThree();
+  const raycaster = useMemo(() => new THREE.Raycaster(), []);
+  const tempPoint = useMemo(() => new THREE.Vector3(), []);
+
+  useEffect(() => {
+    const canvas = gl.domElement;
+    let downX = 0;
+    let downY = 0;
+    let downPointerId = null;
+
+    const pickOrbit = (clientX, clientY) => {
+      if (!orbitPickMeshRef.current || !onSelectOrbit) return false;
+      const orbits = orbitDataRef.current || [];
+      if (orbits.length === 0 || orbitPickMeshRef.current.count === 0) return false;
+
+      const rect = canvas.getBoundingClientRect();
+      const mouse = new THREE.Vector2(
+        ((clientX - rect.left) / rect.width) * 2 - 1,
+        -((clientY - rect.top) / rect.height) * 2 + 1
+      );
+
+      raycaster.setFromCamera(mouse, camera);
+
+      const intersects = raycaster.intersectObject(orbitPickMeshRef.current);
+      if (intersects.length > 0 && intersects[0].instanceId !== undefined) {
+        const orbit = orbits[intersects[0].instanceId];
+        if (orbit) {
+          onSelectOrbit(orbit);
+          return true;
+        }
+      }
+
+      const centers = orbitCentersRef.current;
+      const radii = orbitRadiiRef.current;
+      if (!centers || !radii) return false;
+
+      let bestIndex = -1;
+      let bestScore = Infinity;
+
+      for (let i = 0; i < orbits.length; i++) {
+        const base = i * 3;
+        tempPoint.set(centers[base], centers[base + 1], centers[base + 2]);
+
+        const rayDistSq = raycaster.ray.distanceSqToPoint(tempPoint);
+        const camDist = camera.position.distanceTo(tempPoint);
+        const adaptiveRadius = Math.max(radii[i], camDist * 0.0035);
+        const limitSq = adaptiveRadius * adaptiveRadius;
+
+        if (rayDistSq <= limitSq) {
+          const score = rayDistSq / Math.max(limitSq, 1e-9);
+          if (score < bestScore) {
+            bestScore = score;
+            bestIndex = i;
+          }
+        }
+      }
+
+      if (bestIndex >= 0) {
+        const orbit = orbits[bestIndex];
+        if (orbit) {
+          onSelectOrbit(orbit);
+          return true;
+        }
+      }
+
+      return false;
+    };
+
+    const pickApproach = (clientX, clientY) => {
+      if (!approachPickMeshRef.current || !onSelectApproach) return false;
+      const approaches = approachDataRef.current || [];
+      if (approaches.length === 0 || approachPickMeshRef.current.count === 0) return false;
+
+      const rect = canvas.getBoundingClientRect();
+      const mouse = new THREE.Vector2(
+        ((clientX - rect.left) / rect.width) * 2 - 1,
+        -((clientY - rect.top) / rect.height) * 2 + 1
+      );
+
+      raycaster.setFromCamera(mouse, camera);
+
+      const intersects = raycaster.intersectObject(approachPickMeshRef.current);
+      if (intersects.length > 0 && intersects[0].instanceId !== undefined) {
+        const approach = approaches[intersects[0].instanceId];
+        if (approach) {
+          onSelectApproach(approach);
+          return true;
+        }
+      }
+
+      return false;
+    };
+
+    const handlePointerDown = (event) => {
+      downPointerId = event.pointerId;
+      downX = event.clientX;
+      downY = event.clientY;
+    };
+
+    const handlePointerUp = (event) => {
+      if (downPointerId !== event.pointerId) return;
+
+      const dx = event.clientX - downX;
+      const dy = event.clientY - downY;
+      const moved = Math.hypot(dx, dy);
+      if (moved <= 5) {
+        const didPickOrbit = pickOrbit(event.clientX, event.clientY);
+        if (!didPickOrbit) {
+          pickApproach(event.clientX, event.clientY);
+        }
+      }
+      downPointerId = null;
+    };
+
+    canvas.addEventListener('pointerdown', handlePointerDown);
+    canvas.addEventListener('pointerup', handlePointerUp);
+
+    return () => {
+      canvas.removeEventListener('pointerdown', handlePointerDown);
+      canvas.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [approachDataRef, approachPickMeshRef, camera, gl, onSelectApproach, onSelectOrbit, orbitCentersRef, orbitDataRef, orbitPickMeshRef, orbitRadiiRef, raycaster, tempPoint]);
+
+  return null;
+}
+
 // Handles the recenter/return camera animation via GSAP
 function CameraRecenter({ controlsRef, doRecenter, onRecenterDone, earthPos, isRecentered }) {
   const { camera } = useThree();
@@ -77,6 +204,22 @@ function CameraRecenter({ controlsRef, doRecenter, onRecenterDone, earthPos, isR
 export function SpaceCanvas({ approachesData, filterType, selectedOrbit, onSelectOrbit, onSelectApproach, activeYear, isRecentered }) {
   const controlsRef = useRef();
   const [doRecenter, setDoRecenter] = useState(false);
+  const orbitPickMeshRef = useRef(null);
+  const orbitCentersRef = useRef(null);
+  const orbitRadiiRef = useRef(null);
+  const orbitDataRef = useRef([]);
+  const approachPickMeshRef = useRef(null);
+  const approachDataRef = useRef([]);
+
+  const handleOrbitPickDataChange = useCallback(({ centers, radii, orbits }) => {
+    orbitCentersRef.current = centers;
+    orbitRadiiRef.current = radii;
+    orbitDataRef.current = orbits;
+  }, []);
+
+  const handleApproachDataChange = useCallback((visibleApproaches) => {
+    approachDataRef.current = visibleApproaches;
+  }, []);
 
   const earthAngle = (activeYear - 2000) * (Math.PI * 2);
   const earthRadius = 1.0 * AU_TO_UNITS;
@@ -164,9 +307,24 @@ export function SpaceCanvas({ approachesData, filterType, selectedOrbit, onSelec
               );
           })}
 
-          <AsteroidSwarm filterType={filterType} onSelectOrbit={onSelectOrbit} selectedOrbit={selectedOrbit} activeYear={activeYear} />
+          <AsteroidSwarm
+            filterType={filterType}
+            onSelectOrbit={onSelectOrbit}
+            selectedOrbit={selectedOrbit}
+            activeYear={activeYear}
+            pickMeshRef={orbitPickMeshRef}
+            onOrbitPickDataChange={handleOrbitPickDataChange}
+          />
           {selectedOrbit && <TrajectoryLines orbit={selectedOrbit} activeYear={activeYear} />}
-          {filterType !== 'NONE' && approachesData && <CloseApproaches data={approachesData} earthPos={earthPos.toArray()} filterType={filterType} onSelectApproach={onSelectApproach} />}
+          {filterType !== 'NONE' && approachesData && (
+            <CloseApproaches
+              data={approachesData}
+              earthPos={earthPos.toArray()}
+              filterType={filterType}
+              pickMeshRef={approachPickMeshRef}
+              onApproachDataChange={handleApproachDataChange}
+            />
+          )}
 
           {/* Selective Bloom: High luminance threshold so only emissive objects glow */}
           <EffectComposer>
@@ -186,6 +344,17 @@ export function SpaceCanvas({ approachesData, filterType, selectedOrbit, onSelec
           onRecenterDone={handleRecenterDone}
           earthPos={earthPos}
           isRecentered={isRecentered}
+        />
+
+        <UnifiedPicker
+          orbitPickMeshRef={orbitPickMeshRef}
+          orbitCentersRef={orbitCentersRef}
+          orbitRadiiRef={orbitRadiiRef}
+          orbitDataRef={orbitDataRef}
+          approachPickMeshRef={approachPickMeshRef}
+          approachDataRef={approachDataRef}
+          onSelectOrbit={onSelectOrbit}
+          onSelectApproach={onSelectApproach}
         />
 
         {/* NO target prop — managed entirely via useEffect and GSAP to prevent React from overwriting animated values */}

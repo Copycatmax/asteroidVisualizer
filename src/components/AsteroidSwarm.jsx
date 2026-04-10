@@ -1,130 +1,16 @@
 import React, { useRef, useMemo, useEffect, useState } from 'react';
 import * as THREE from 'three';
-import { useThree } from '@react-three/fiber';
 import FilterWorker from '../workers/dataFilter.worker.js?worker';
 
 const AU_TO_UNITS = 20;
-const PICK_CONSUMED_KEY = '__avPickConsumed';
 
-// Manual click handler that bypasses R3F's event system entirely.
-// R3F's built-in raycasting conflicts with OrbitControls' pointer handling,
-// causing onClick/onPointerDown to never fire on InstancedMesh.
-function ManualClickDetector({ pickMeshRef, pickCentersRef, pickRadiiRef, filteredOrbits, onSelectOrbit }) {
-  const { camera, gl } = useThree();
-  const raycaster = useMemo(() => new THREE.Raycaster(), []);
-  const tempPoint = useMemo(() => new THREE.Vector3(), []);
-
-  useEffect(() => {
-    const canvas = gl.domElement;
-    let downX = 0;
-    let downY = 0;
-    let downPointerId = null;
-
-    const pickAt = (clientX, clientY) => {
-      if (!pickMeshRef.current || !onSelectOrbit) return false;
-      if (filteredOrbits.length === 0 || pickMeshRef.current.count === 0) return false;
-
-      // Convert mouse coordinates to Normalized Device Coordinates (-1 to +1)
-      const rect = canvas.getBoundingClientRect();
-      const mouse = new THREE.Vector2(
-        ((clientX - rect.left) / rect.width) * 2 - 1,
-        -((clientY - rect.top) / rect.height) * 2 + 1
-      );
-
-      raycaster.setFromCamera(mouse, camera);
-
-      const intersects = raycaster.intersectObject(pickMeshRef.current);
-      if (intersects.length > 0 && intersects[0].instanceId !== undefined) {
-        const orbit = filteredOrbits[intersects[0].instanceId];
-        if (orbit) {
-          onSelectOrbit(orbit);
-          return true;
-        }
-      }
-
-      // Fallback for distant tiny targets: pick nearest cached orbit center within
-      // an adaptive radius so far-away objects remain clickable.
-      const centers = pickCentersRef.current;
-      const radii = pickRadiiRef.current;
-      if (!centers || !radii || filteredOrbits.length === 0) return false;
-
-      let bestIndex = -1;
-      let bestScore = Infinity;
-
-      for (let i = 0; i < filteredOrbits.length; i++) {
-        const base = i * 3;
-        tempPoint.set(centers[base], centers[base + 1], centers[base + 2]);
-
-        const rayDistSq = raycaster.ray.distanceSqToPoint(tempPoint);
-        const camDist = camera.position.distanceTo(tempPoint);
-        const adaptiveRadius = Math.max(radii[i], camDist * 0.0035);
-        const limitSq = adaptiveRadius * adaptiveRadius;
-
-        if (rayDistSq <= limitSq) {
-          const score = rayDistSq / Math.max(limitSq, 1e-9);
-          if (score < bestScore) {
-            bestScore = score;
-            bestIndex = i;
-          }
-        }
-      }
-
-      if (bestIndex >= 0) {
-        const orbit = filteredOrbits[bestIndex];
-        if (orbit) {
-          onSelectOrbit(orbit);
-          return true;
-        }
-      }
-
-      return false;
-    };
-
-    const handlePointerDown = (event) => {
-      downPointerId = event.pointerId;
-      downX = event.clientX;
-      downY = event.clientY;
-    };
-
-    const handlePointerUp = (event) => {
-      if (downPointerId !== event.pointerId) return;
-      const dx = event.clientX - downX;
-      const dy = event.clientY - downY;
-      const moved = Math.hypot(dx, dy);
-      const pickToken = `${event.pointerId}:${event.timeStamp}`;
-
-      if (window[PICK_CONSUMED_KEY] === pickToken) {
-        downPointerId = null;
-        return;
-      }
-
-      // Ignore drags so OrbitControls still feels natural.
-      if (moved <= 5) {
-        const didPick = pickAt(event.clientX, event.clientY);
-        if (didPick) {
-          window[PICK_CONSUMED_KEY] = pickToken;
-        }
-      }
-      downPointerId = null;
-    };
-
-    canvas.addEventListener('pointerdown', handlePointerDown);
-    canvas.addEventListener('pointerup', handlePointerUp);
-
-    return () => {
-      canvas.removeEventListener('pointerdown', handlePointerDown);
-      canvas.removeEventListener('pointerup', handlePointerUp);
-    };
-  }, [camera, gl, pickCentersRef, pickMeshRef, pickRadiiRef, filteredOrbits, onSelectOrbit, raycaster, tempPoint]);
-
-  return null;
-}
-
-export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, activeYear }) {
+export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, activeYear, pickMeshRef: externalPickMeshRef, onOrbitPickDataChange }) {
   const meshRef = useRef();
-  const pickMeshRef = useRef();
+  const pickMeshRefInternal = useRef();
   const pickCentersRef = useRef(null);
   const pickRadiiRef = useRef(null);
+
+  const pickMeshRef = externalPickMeshRef || pickMeshRefInternal;
   const workerRef = useRef(null);
 
   const [orbits, setOrbits] = useState([]);
@@ -195,6 +81,9 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
       pickMeshRef.current.count = 0;
       pickCentersRef.current = null;
       pickRadiiRef.current = null;
+      if (onOrbitPickDataChange) {
+        onOrbitPickDataChange({ centers: null, radii: null, orbits: [] });
+      }
       return;
     }
 
@@ -279,22 +168,16 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
     pickMeshRef.current.instanceMatrix.needsUpdate = true;
     pickCentersRef.current = pickCenters;
     pickRadiiRef.current = pickRadii;
-  }, [activeYear, filteredOrbits, dummy, color]);
+    if (onOrbitPickDataChange) {
+      onOrbitPickDataChange({ centers: pickCenters, radii: pickRadii, orbits: filteredOrbits });
+    }
+  }, [activeYear, filteredOrbits, dummy, color, onOrbitPickDataChange, pickMeshRef]);
 
 
   if (orbits.length === 0) return null;
 
   return (
     <>
-      {/* Manual click detection — bypasses R3F's event system which conflicts with OrbitControls */}
-      <ManualClickDetector
-        pickMeshRef={pickMeshRef}
-        pickCentersRef={pickCentersRef}
-        pickRadiiRef={pickRadiiRef}
-        filteredOrbits={filteredOrbits}
-        onSelectOrbit={onSelectOrbit}
-      />
-
       <instancedMesh ref={meshRef} args={[null, null, orbits.length]} frustumCulled={false}>
         <sphereGeometry args={[1, 16, 16]} />
         <meshBasicMaterial toneMapped={false} transparent opacity={selectedOrbit ? 0.15 : 1} />

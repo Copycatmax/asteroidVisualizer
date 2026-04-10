@@ -1,9 +1,7 @@
 import React, { useRef, useMemo, useEffect } from 'react';
 import * as THREE from 'three';
-import { useThree } from '@react-three/fiber';
 
 const AU_TO_UNITS = 20;
-const PICK_CONSUMED_KEY = '__avPickConsumed';
 
 function hashString(value) {
   let h = 2166136261;
@@ -39,93 +37,10 @@ function deterministicUnitVector(seedKey) {
   };
 }
 
-function ManualApproachClickDetector({ pickMeshRef, visibleData, onSelectApproach }) {
-  const { camera, gl } = useThree();
-  const raycaster = useMemo(() => new THREE.Raycaster(), []);
-
-  useEffect(() => {
-    const canvas = gl.domElement;
-    let downX = 0;
-    let downY = 0;
-    let downPointerId = null;
-
-    const pickAt = (clientX, clientY) => {
-      if (!pickMeshRef.current || !onSelectApproach) return false;
-      if (visibleData.length === 0 || pickMeshRef.current.count === 0) return false;
-
-      const rect = canvas.getBoundingClientRect();
-      const mouse = new THREE.Vector2(
-        ((clientX - rect.left) / rect.width) * 2 - 1,
-        -((clientY - rect.top) / rect.height) * 2 + 1
-      );
-
-      raycaster.setFromCamera(mouse, camera);
-
-      const intersects = raycaster.intersectObject(pickMeshRef.current);
-      if (intersects.length > 0 && intersects[0].instanceId !== undefined) {
-        const event = visibleData[intersects[0].instanceId];
-        if (event) {
-          onSelectApproach(event);
-          return true;
-        }
-      }
-
-      return false;
-    };
-
-    const handlePointerDown = (event) => {
-      downPointerId = event.pointerId;
-      downX = event.clientX;
-      downY = event.clientY;
-    };
-
-    const handlePointerUp = (event) => {
-      if (downPointerId !== event.pointerId) return;
-      const pickToken = `${event.pointerId}:${event.timeStamp}`;
-
-      if (window[PICK_CONSUMED_KEY] === pickToken) {
-        downPointerId = null;
-        return;
-      }
-
-      const dx = event.clientX - downX;
-      const dy = event.clientY - downY;
-      const moved = Math.hypot(dx, dy);
-
-      if (moved <= 5) {
-        const clientX = event.clientX;
-        const clientY = event.clientY;
-
-        // Let asteroid picker run first on the same click; close-approach acts as fallback.
-        setTimeout(() => {
-          if (window[PICK_CONSUMED_KEY] === pickToken) {
-            return;
-          }
-
-          const didPick = pickAt(clientX, clientY);
-          if (didPick) {
-            window[PICK_CONSUMED_KEY] = pickToken;
-          }
-        }, 0);
-      }
-      downPointerId = null;
-    };
-
-    canvas.addEventListener('pointerdown', handlePointerDown);
-    canvas.addEventListener('pointerup', handlePointerUp);
-
-    return () => {
-      canvas.removeEventListener('pointerdown', handlePointerDown);
-      canvas.removeEventListener('pointerup', handlePointerUp);
-    };
-  }, [camera, gl, onSelectApproach, pickMeshRef, raycaster, visibleData]);
-
-  return null;
-}
-
-export function CloseApproaches({ data, earthPos, filterType = 'ALL', onSelectApproach }) {
+export function CloseApproaches({ data, earthPos, filterType = 'ALL', pickMeshRef: externalPickMeshRef, onApproachDataChange }) {
   const meshRef = useRef();
-  const pickMeshRef = useRef();
+  const pickMeshRefInternal = useRef();
+  const pickMeshRef = externalPickMeshRef || pickMeshRefInternal;
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const color = useMemo(() => new THREE.Color(), []);
   const visibleData = useMemo(() => {
@@ -148,6 +63,9 @@ export function CloseApproaches({ data, earthPos, filterType = 'ALL', onSelectAp
     if (visibleData.length === 0) {
       meshRef.current.count = 0;
       pickMeshRef.current.count = 0;
+      if (onApproachDataChange) {
+        onApproachDataChange([]);
+      }
       return;
     }
 
@@ -201,18 +119,15 @@ export function CloseApproaches({ data, earthPos, filterType = 'ALL', onSelectAp
     meshRef.current.instanceMatrix.needsUpdate = true;
     meshRef.current.instanceColor.needsUpdate = true;
     pickMeshRef.current.instanceMatrix.needsUpdate = true;
-  }, [visibleData, dummy, color]);
+    if (onApproachDataChange) {
+      onApproachDataChange(visibleData);
+    }
+  }, [visibleData, dummy, color, onApproachDataChange, pickMeshRef]);
 
   if (visibleData.length === 0) return null;
 
   return (
     <group position={earthPos || [0, 0, 0]}>
-      <ManualApproachClickDetector
-        pickMeshRef={pickMeshRef}
-        visibleData={visibleData}
-        onSelectApproach={onSelectApproach}
-      />
-
       <instancedMesh ref={meshRef} args={[null, null, visibleData.length]}>
         <sphereGeometry args={[1, 16, 16]} />
         <meshBasicMaterial toneMapped={false} />
