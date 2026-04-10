@@ -4,7 +4,7 @@ import FilterWorker from '../workers/dataFilter.worker.js?worker';
 
 const AU_TO_UNITS = 20;
 
-export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, activeYear, pickMeshRef: externalPickMeshRef, onOrbitPickDataChange }) {
+export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, activeYear, searchTerm, pickMeshRef: externalPickMeshRef, onOrbitPickDataChange }) {
   const meshRef = useRef();
   const pickMeshRefInternal = useRef();
   const pickCentersRef = useRef(null);
@@ -12,9 +12,19 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
 
   const pickMeshRef = externalPickMeshRef || pickMeshRefInternal;
   const workerRef = useRef(null);
+  const filterTypeRef = useRef(filterType);
 
   const [orbits, setOrbits] = useState([]);
   const [filteredOrbits, setFilteredOrbits] = useState([]);
+  const [isWorkerReady, setIsWorkerReady] = useState(false);
+
+  const orbitBySpkId = useMemo(() => {
+    const byId = new Map();
+    for (const orbit of orbits) {
+      byId.set(String(orbit[0]), orbit);
+    }
+    return byId;
+  }, [orbits]);
 
   // Fetch initial massive dataset
   useEffect(() => {
@@ -30,6 +40,7 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
   // Web Worker setup
   useEffect(() => {
     workerRef.current = new FilterWorker();
+    setIsWorkerReady(true);
 
     workerRef.current.onmessage = (e) => {
       if (e.data.type === 'FILTERED_DATA') {
@@ -41,37 +52,42 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
       if (workerRef.current) {
         workerRef.current.terminate();
       }
+      setIsWorkerReady(false);
     };
   }, []);
 
-  // Dispatch work to worker when filter changes
+  // Send source data once and let the worker own filtering thereafter.
   useEffect(() => {
-    if (orbits.length > 0 && workerRef.current) {
-      workerRef.current.postMessage({ type: 'FILTER', data: orbits, filterType });
+    filterTypeRef.current = filterType;
+  }, [filterType]);
+
+  useEffect(() => {
+    if (!isWorkerReady || !workerRef.current || orbits.length === 0) return;
+    workerRef.current.postMessage({ type: 'SET_DATA', payload: orbits });
+    workerRef.current.postMessage({ type: 'FILTER', filterType: filterTypeRef.current });
+  }, [isWorkerReady, orbits]);
+
+  useEffect(() => {
+    if (isWorkerReady && workerRef.current) {
+      workerRef.current.postMessage({ type: 'FILTER', filterType });
     }
-  }, [filterType, orbits]);
+  }, [filterType, isWorkerReady]);
 
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const color = useMemo(() => new THREE.Color(), []);
 
   // Search Logic
   useEffect(() => {
-    const handleSearch = (e) => {
-      const term = e.detail.toLowerCase().trim();
-      if (!term || term.length < 3) return;
+    const term = (searchTerm || '').toLowerCase().trim();
+    if (!term || term.length < 3) return;
 
-      const match = orbits.find(o =>
-        (o[8] && o[8].toLowerCase().includes(term)) ||
-        (o[0] && o[0].toString() === term)
-      );
+    const exactById = orbitBySpkId.get(term);
+    const match = exactById || orbits.find((o) => o[8] && String(o[8]).toLowerCase().includes(term));
 
-      if (match && onSelectOrbit) {
-        onSelectOrbit(match);
-      }
-    };
-    window.addEventListener('SEARCH_ASTEROID', handleSearch);
-    return () => window.removeEventListener('SEARCH_ASTEROID', handleSearch);
-  }, [orbits, onSelectOrbit]);
+    if (match && onSelectOrbit) {
+      onSelectOrbit(match);
+    }
+  }, [searchTerm, orbitBySpkId, orbits, onSelectOrbit]);
 
   useEffect(() => {
     if (!meshRef.current || !pickMeshRef.current) return;

@@ -37,6 +37,19 @@ body {
   z-index: 0;
 }
 
+.loading-indicator {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #aaddff;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  background: radial-gradient(circle at center, rgba(10, 15, 30, 0.6), rgba(2, 2, 5, 0.92));
+  z-index: 1;
+}
+
 /* CRITICAL: Drei's <Html> creates outer wrapper divs as siblings of the <canvas>.
    Without this, those wrappers capture pointer events before they reach WebGL. */
 .label-no-events {
