@@ -1,5 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 
+function parseChunkResponse(response, year) {
+  if (!response.ok) {
+    throw new Error(`Failed to load approaches_${year}.json: HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
 export function useDataChunker(activeYear) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -14,8 +21,11 @@ export function useDataChunker(activeYear) {
 
       inflightPrefetchRef.current.add(year);
       fetch(`/data/approaches_${year}.json`)
-        .then((res) => res.json())
+        .then((res) => parseChunkResponse(res, year))
         .then((chunk) => {
+          if (!Array.isArray(chunk)) {
+            throw new Error(`Invalid chunk format for approaches_${year}.json`);
+          }
           yearCacheRef.current.set(year, chunk);
         })
         .catch(() => {
@@ -44,8 +54,11 @@ export function useDataChunker(activeYear) {
     const controller = new AbortController();
     setLoading(true);
     fetch(`/data/approaches_${activeYear}.json`, { signal: controller.signal })
-      .then((res) => res.json())
+      .then((res) => parseChunkResponse(res, activeYear))
       .then((chunk) => {
+        if (!Array.isArray(chunk)) {
+          throw new Error(`Invalid chunk format for approaches_${activeYear}.json`);
+        }
         yearCacheRef.current.set(activeYear, chunk);
         setData(chunk);
         setLoading(false);

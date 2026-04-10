@@ -50,15 +50,6 @@ body {
   z-index: 1;
 }
 
-/* CRITICAL: Drei's <Html> creates outer wrapper divs as siblings of the <canvas>.
-   Without this, those wrappers capture pointer events before they reach WebGL. */
-.label-no-events {
-  pointer-events: none !important;
-}
-.label-no-events * {
-  pointer-events: none !important;
-}
-
 /* Glassmorphism HUD Panels */
 .hud-header {
   position: absolute;

@@ -14,10 +14,13 @@ self.onmessage = function (e) {
       return;
     }
 
-    let filtered = [];
     if (filterType === 'ALL') {
-      filtered = sourceData;
-    } else if (filterType === 'PHA') {
+      self.postMessage({ type: 'USE_SOURCE_DATA' });
+      return;
+    }
+
+    let filtered = [];
+    if (filterType === 'PHA') {
       filtered = sourceData.filter((orbit) => orbit[7] === 1);
     } else if (filterType === 'SAFE') {
       filtered = sourceData.filter((orbit) => orbit[7] === 0);

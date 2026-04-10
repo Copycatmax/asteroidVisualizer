@@ -267,6 +267,7 @@ function UnifiedPicker({ orbitPickMeshRef, orbitCentersRef, orbitRadiiRef, orbit
 // Handles the recenter/return camera animation via GSAP
 function CameraRecenter({ controlsRef, doRecenter, onRecenterDone, earthPos, isRecentered }) {
   const { camera } = useThree();
+  const prevIsRecenteredRef = useRef(isRecentered);
 
   useEffect(() => {
     if (!doRecenter || !controlsRef.current) return;
@@ -304,9 +305,12 @@ function CameraRecenter({ controlsRef, doRecenter, onRecenterDone, earthPos, isR
     };
   }, [camera, controlsRef, doRecenter, onRecenterDone]);
 
-  // Animate back to Earth when un-recentered
+  // Animate back to Earth only when transitioning from recentered -> tracked mode.
   useEffect(() => {
-    if (isRecentered || !controlsRef.current) return;
+    const wasRecentered = prevIsRecenteredRef.current;
+    prevIsRecenteredRef.current = isRecentered;
+
+    if (!wasRecentered || isRecentered || !controlsRef.current) return;
 
     const target = controlsRef.current.target;
     let isDisposed = false;

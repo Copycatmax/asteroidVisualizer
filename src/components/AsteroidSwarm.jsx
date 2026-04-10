@@ -38,15 +38,22 @@ function resolveLodStride(cameraDistance) {
   return 12;
 }
 
+function ensureFloat32Capacity(buffer, requiredLength) {
+  if (buffer.length >= requiredLength) return buffer;
+  return new Float32Array(requiredLength);
+}
+
 export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, activeYear, searchTerm, pickMeshRef: externalPickMeshRef, onOrbitPickDataChange }) {
   const meshRef = useRef();
   const pickMeshRefInternal = useRef();
   const pickCentersRef = useRef(null);
   const pickRadiiRef = useRef(null);
+  const pickCentersBufferRef = useRef(new Float32Array(0));
+  const pickRadiiBufferRef = useRef(new Float32Array(0));
 
   const pickMeshRef = externalPickMeshRef || pickMeshRefInternal;
   const workerRef = useRef(null);
-  const filterTypeRef = useRef(filterType);
+  const orbitsRef = useRef([]);
 
   const [orbits, setOrbits] = useState([]);
   const [filteredOrbits, setFilteredOrbits] = useState([]);
@@ -133,6 +140,10 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
       .catch((err) => console.error('Failed to load orbits:', err));
   }, []);
 
+  useEffect(() => {
+    orbitsRef.current = orbits;
+  }, [orbits]);
+
   // Web Worker setup
   useEffect(() => {
     workerRef.current = new FilterWorker();
@@ -141,6 +152,8 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
     workerRef.current.onmessage = (e) => {
       if (e.data.type === 'FILTERED_DATA') {
         setFilteredOrbits(e.data.payload);
+      } else if (e.data.type === 'USE_SOURCE_DATA') {
+        setFilteredOrbits(orbitsRef.current);
       }
     };
 
@@ -152,22 +165,26 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
     };
   }, []);
 
-  // Send source data once and let the worker own filtering thereafter.
-  useEffect(() => {
-    filterTypeRef.current = filterType;
-  }, [filterType]);
-
   useEffect(() => {
     if (!isWorkerReady || !workerRef.current || orbits.length === 0) return;
     workerRef.current.postMessage({ type: 'SET_DATA', payload: orbits });
-    workerRef.current.postMessage({ type: 'FILTER', filterType: filterTypeRef.current });
   }, [isWorkerReady, orbits]);
 
   useEffect(() => {
+    if (filterType === 'ALL') {
+      setFilteredOrbits(orbits);
+      return;
+    }
+
+    if (filterType === 'NONE') {
+      setFilteredOrbits([]);
+      return;
+    }
+
     if (isWorkerReady && workerRef.current) {
       workerRef.current.postMessage({ type: 'FILTER', filterType });
     }
-  }, [filterType, isWorkerReady]);
+  }, [filterType, isWorkerReady, orbits]);
 
   useEffect(() => {
     if (!meshRef.current || !pickMeshRef.current) return;
@@ -212,8 +229,12 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
     // Dynamically adjust count to avoid full remounts which trigger garbage collection frame drops
     meshRef.current.count = precomputedOrbits.length;
     pickMeshRef.current.count = precomputedOrbits.length;
-    const pickCenters = new Float32Array(precomputedOrbits.length * 3);
-    const pickRadii = new Float32Array(precomputedOrbits.length);
+    const requiredCentersLength = precomputedOrbits.length * 3;
+    pickCentersBufferRef.current = ensureFloat32Capacity(pickCentersBufferRef.current, requiredCentersLength);
+    pickRadiiBufferRef.current = ensureFloat32Capacity(pickRadiiBufferRef.current, precomputedOrbits.length);
+
+    const pickCenters = pickCentersBufferRef.current;
+    const pickRadii = pickRadiiBufferRef.current;
     const yearOffset = activeYear - 2000;
 
     for (let i = 0; i < precomputedOrbits.length; i++) {
