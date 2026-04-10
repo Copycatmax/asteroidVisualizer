@@ -105,13 +105,17 @@ function StarField() {
   );
 }
 
-function CameraControlsRig({ controlsRef }) {
+function CameraControlsRig({ controlsRef, onControlsReady }) {
   const { camera, gl } = useThree();
   const localControlsRef = useRef(null);
 
   useEffect(() => {
     const controls = localControlsRef.current;
     controlsRef.current = controls;
+    if (onControlsReady) {
+      onControlsReady(Boolean(controls));
+    }
+
     return () => {
       if (controls && typeof controls.dispose === 'function') {
         controls.dispose();
@@ -119,8 +123,11 @@ function CameraControlsRig({ controlsRef }) {
       if (controlsRef.current === controls) {
         controlsRef.current = null;
       }
+      if (onControlsReady) {
+        onControlsReady(false);
+      }
     };
-  }, [controlsRef]);
+  }, [controlsRef, onControlsReady]);
 
   useFrame(() => {
     if (localControlsRef.current) {
@@ -268,12 +275,12 @@ function UnifiedPicker({ orbitPickMeshRef, orbitCentersRef, orbitRadiiRef, orbit
 }
 
 // Handles the recenter/return camera animation via GSAP
-function CameraRecenter({ controlsRef, doRecenter, onRecenterDone, earthPos, isRecentered }) {
+function CameraRecenter({ controlsRef, controlsReady, doRecenter, onRecenterDone, earthPos, isRecentered }) {
   const { camera } = useThree();
   const prevIsRecenteredRef = useRef(isRecentered);
 
   useEffect(() => {
-    if (!doRecenter || !controlsRef.current) return;
+    if (!doRecenter || !controlsReady || !controlsRef.current) return;
 
     const target = controlsRef.current.target;
     let isDisposed = false;
@@ -310,14 +317,14 @@ function CameraRecenter({ controlsRef, doRecenter, onRecenterDone, earthPos, isR
       isDisposed = true;
       if (timeline) timeline.kill();
     };
-  }, [camera, controlsRef, doRecenter, onRecenterDone]);
+  }, [camera, controlsReady, controlsRef, doRecenter, onRecenterDone]);
 
   // Animate back to Earth only when transitioning from recentered -> tracked mode.
   useEffect(() => {
     const wasRecentered = prevIsRecenteredRef.current;
     prevIsRecenteredRef.current = isRecentered;
 
-    if (!wasRecentered || isRecentered || !controlsRef.current) return;
+    if (!wasRecentered || isRecentered || !controlsReady || !controlsRef.current) return;
 
     const target = controlsRef.current.target;
     let isDisposed = false;
@@ -352,13 +359,14 @@ function CameraRecenter({ controlsRef, doRecenter, onRecenterDone, earthPos, isR
       isDisposed = true;
       if (timeline) timeline.kill();
     };
-  }, [camera, controlsRef, earthPos.x, earthPos.y, earthPos.z, isRecentered]);
+  }, [camera, controlsReady, controlsRef, earthPos.x, earthPos.y, earthPos.z, isRecentered]);
 
   return null;
 }
 
 export function SpaceCanvas({ approachesData, filterType, selectedOrbit, onSelectOrbit, onSelectApproach, activeYear, searchTerm, isRecentered }) {
   const controlsRef = useRef();
+  const [controlsReady, setControlsReady] = useState(false);
   const [doRecenter, setDoRecenter] = useState(false);
   const orbitPickMeshRef = useRef(null);
   const orbitCentersRef = useRef(null);
@@ -484,6 +492,7 @@ export function SpaceCanvas({ approachesData, filterType, selectedOrbit, onSelec
 
         <CameraRecenter
           controlsRef={controlsRef}
+          controlsReady={controlsReady}
           doRecenter={doRecenter}
           onRecenterDone={handleRecenterDone}
           earthPos={earthPos}
@@ -502,7 +511,7 @@ export function SpaceCanvas({ approachesData, filterType, selectedOrbit, onSelec
         />
 
         {/* NO target prop — managed entirely via useEffect and GSAP to prevent React from overwriting animated values */}
-        <CameraControlsRig controlsRef={controlsRef} />
+        <CameraControlsRig controlsRef={controlsRef} onControlsReady={setControlsReady} />
       </Canvas>
     </div>
   );

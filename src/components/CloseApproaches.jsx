@@ -141,6 +141,7 @@ export function CloseApproaches({ data, earthPos, filterType = 'ALL', pickMeshRe
 
     meshRef.current.count = visibleData.length;
     pickMeshRef.current.count = visibleData.length;
+    let maxPickDistance = 1;
 
     for (let i = 0; i < visibleData.length; i++) {
         // [name, timestamp_ms, distance_au, velocity_kms, H]
@@ -195,6 +196,7 @@ export function CloseApproaches({ data, earthPos, filterType = 'ALL', pickMeshRe
         dummy.scale.set(pickScale, pickScale, pickScale);
         dummy.updateMatrix();
         pickMeshRef.current.setMatrixAt(i, dummy.matrix);
+        maxPickDistance = Math.max(maxPickDistance, r + pickScale);
 
         // Color coding by proximity hazard level
         if (distAu <= 0.01) {
@@ -206,6 +208,13 @@ export function CloseApproaches({ data, earthPos, filterType = 'ALL', pickMeshRe
         }
         meshRef.current.setColorAt(i, color);
     }
+
+      // Ensure instanced raycasting broad-phase checks include translated markers.
+      const sharedBounds = new THREE.Sphere(new THREE.Vector3(0, 0, 0), maxPickDistance);
+      meshRef.current.geometry.boundingSphere = sharedBounds;
+      meshRef.current.geometry.computeBoundingSphere = () => {};
+      pickMeshRef.current.geometry.boundingSphere = sharedBounds;
+      pickMeshRef.current.geometry.computeBoundingSphere = () => {};
     
     meshRef.current.instanceMatrix.needsUpdate = true;
     meshRef.current.instanceColor.needsUpdate = true;
