@@ -9,9 +9,10 @@ const PICK_CONSUMED_KEY = '__avPickConsumed';
 // Manual click handler that bypasses R3F's event system entirely.
 // R3F's built-in raycasting conflicts with OrbitControls' pointer handling,
 // causing onClick/onPointerDown to never fire on InstancedMesh.
-function ManualClickDetector({ pickMeshRef, filteredOrbits, onSelectOrbit }) {
+function ManualClickDetector({ pickMeshRef, pickCentersRef, pickRadiiRef, filteredOrbits, onSelectOrbit }) {
   const { camera, gl } = useThree();
   const raycaster = useMemo(() => new THREE.Raycaster(), []);
+  const tempPoint = useMemo(() => new THREE.Vector3(), []);
 
   useEffect(() => {
     const canvas = gl.domElement;
@@ -35,6 +36,41 @@ function ManualClickDetector({ pickMeshRef, filteredOrbits, onSelectOrbit }) {
       const intersects = raycaster.intersectObject(pickMeshRef.current);
       if (intersects.length > 0 && intersects[0].instanceId !== undefined) {
         const orbit = filteredOrbits[intersects[0].instanceId];
+        if (orbit) {
+          onSelectOrbit(orbit);
+          return true;
+        }
+      }
+
+      // Fallback for distant tiny targets: pick nearest cached orbit center within
+      // an adaptive radius so far-away objects remain clickable.
+      const centers = pickCentersRef.current;
+      const radii = pickRadiiRef.current;
+      if (!centers || !radii || filteredOrbits.length === 0) return false;
+
+      let bestIndex = -1;
+      let bestScore = Infinity;
+
+      for (let i = 0; i < filteredOrbits.length; i++) {
+        const base = i * 3;
+        tempPoint.set(centers[base], centers[base + 1], centers[base + 2]);
+
+        const rayDistSq = raycaster.ray.distanceSqToPoint(tempPoint);
+        const camDist = camera.position.distanceTo(tempPoint);
+        const adaptiveRadius = Math.max(radii[i], camDist * 0.0035);
+        const limitSq = adaptiveRadius * adaptiveRadius;
+
+        if (rayDistSq <= limitSq) {
+          const score = rayDistSq / Math.max(limitSq, 1e-9);
+          if (score < bestScore) {
+            bestScore = score;
+            bestIndex = i;
+          }
+        }
+      }
+
+      if (bestIndex >= 0) {
+        const orbit = filteredOrbits[bestIndex];
         if (orbit) {
           onSelectOrbit(orbit);
           return true;
@@ -79,7 +115,7 @@ function ManualClickDetector({ pickMeshRef, filteredOrbits, onSelectOrbit }) {
       canvas.removeEventListener('pointerdown', handlePointerDown);
       canvas.removeEventListener('pointerup', handlePointerUp);
     };
-  }, [camera, gl, pickMeshRef, filteredOrbits, onSelectOrbit, raycaster]);
+  }, [camera, gl, pickCentersRef, pickMeshRef, pickRadiiRef, filteredOrbits, onSelectOrbit, raycaster, tempPoint]);
 
   return null;
 }
@@ -87,6 +123,8 @@ function ManualClickDetector({ pickMeshRef, filteredOrbits, onSelectOrbit }) {
 export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, activeYear }) {
   const meshRef = useRef();
   const pickMeshRef = useRef();
+  const pickCentersRef = useRef(null);
+  const pickRadiiRef = useRef(null);
   const workerRef = useRef(null);
 
   const [orbits, setOrbits] = useState([]);
@@ -155,12 +193,16 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
     if (filteredOrbits.length === 0) {
       meshRef.current.count = 0;
       pickMeshRef.current.count = 0;
+      pickCentersRef.current = null;
+      pickRadiiRef.current = null;
       return;
     }
 
     // Dynamically adjust count to avoid full remounts which trigger garbage collection frame drops
     meshRef.current.count = filteredOrbits.length;
     pickMeshRef.current.count = filteredOrbits.length;
+    const pickCenters = new Float32Array(filteredOrbits.length * 3);
+    const pickRadii = new Float32Array(filteredOrbits.length);
 
     for (let i = 0; i < filteredOrbits.length; i++) {
       const orbit = filteredOrbits[i];
@@ -198,6 +240,9 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
       const z = sini * yPlane;
 
       dummy.position.set(x, z, y);
+      const cx = x;
+      const cy = z;
+      const cz = y;
 
       // Logarithmic scale derived from Absolute Magnitude - sized up artificially to ensure raycaster hitboxes are clickable!
       let sizeScale = Math.max(0.04, Math.pow(10, (20 - H) / 10) * 0.008);
@@ -211,6 +256,12 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
       dummy.scale.set(sizeScale * 3.2, sizeScale * 3.2, sizeScale * 3.2);
       dummy.updateMatrix();
       pickMeshRef.current.setMatrixAt(i, dummy.matrix);
+
+      const base = i * 3;
+      pickCenters[base] = cx;
+      pickCenters[base + 1] = cy;
+      pickCenters[base + 2] = cz;
+      pickRadii[i] = sizeScale * 3.2;
 
       color.set(pha ? '#ff3333' : '#aaddff');
       meshRef.current.setColorAt(i, color);
@@ -226,6 +277,8 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
     meshRef.current.instanceMatrix.needsUpdate = true;
     meshRef.current.instanceColor.needsUpdate = true;
     pickMeshRef.current.instanceMatrix.needsUpdate = true;
+    pickCentersRef.current = pickCenters;
+    pickRadiiRef.current = pickRadii;
   }, [activeYear, filteredOrbits, dummy, color]);
 
 
@@ -236,6 +289,8 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
       {/* Manual click detection — bypasses R3F's event system which conflicts with OrbitControls */}
       <ManualClickDetector
         pickMeshRef={pickMeshRef}
+        pickCentersRef={pickCentersRef}
+        pickRadiiRef={pickRadiiRef}
         filteredOrbits={filteredOrbits}
         onSelectOrbit={onSelectOrbit}
       />

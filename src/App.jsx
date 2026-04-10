@@ -27,7 +27,6 @@ function App() {
   }, []);
 
   const handleSelectApproach = useCallback((approach) => {
-    setSelectedOrbit(null);
     setSelectedApproach(approach);
   }, []);
 
@@ -96,7 +95,7 @@ function App() {
           </div>
           )}
 
-          {selectedApproach && (
+          {!selectedOrbit && selectedApproach && (
           <div className="data-panel-glass">
             <h2>Close Approach Event</h2>
             <div className="data-grid">
