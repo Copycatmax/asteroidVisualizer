@@ -2,6 +2,8 @@ import React, { useRef, useMemo, useEffect, useState } from 'react';
 import * as THREE from 'three';
 
 const AU_TO_UNITS = 20;
+let orbitIndexByNameCache = null;
+let orbitIndexByNamePromise = null;
 
 function hashString(value) {
   let h = 2166136261;
@@ -103,6 +105,58 @@ function getOrbitPositionAtYear(orbit, yearValue) {
   return { x, y: z, z: y };
 }
 
+function buildOrbitIndexByName(rows) {
+  const byName = new Map();
+
+  for (let i = 0; i < rows.length; i++) {
+    const orbit = rows[i];
+    if (!orbit) continue;
+
+    const nameKey = normalizeDesignation(orbit[8]);
+    if (nameKey && !byName.has(nameKey)) {
+      byName.set(nameKey, orbit);
+    }
+
+    const idKey = normalizeDesignation(orbit[0]);
+    if (idKey && !byName.has(idKey)) {
+      byName.set(idKey, orbit);
+    }
+  }
+
+  return byName;
+}
+
+function loadOrbitIndexByName() {
+  if (orbitIndexByNameCache) {
+    return Promise.resolve(orbitIndexByNameCache);
+  }
+
+  if (orbitIndexByNamePromise) {
+    return orbitIndexByNamePromise;
+  }
+
+  orbitIndexByNamePromise = fetch('/data/orbits.json')
+    .then((res) => {
+      if (!res.ok) {
+        throw new Error(`Failed to load orbits.json: HTTP ${res.status}`);
+      }
+      return res.json();
+    })
+    .then((rows) => {
+      if (!Array.isArray(rows)) {
+        throw new Error('Invalid orbits.json format');
+      }
+
+      orbitIndexByNameCache = buildOrbitIndexByName(rows);
+      return orbitIndexByNameCache;
+    })
+    .finally(() => {
+      orbitIndexByNamePromise = null;
+    });
+
+  return orbitIndexByNamePromise;
+}
+
 export function CloseApproaches({ data, earthPos, filterType = 'ALL', pickMeshRef: externalPickMeshRef, onApproachDataChange }) {
   const meshRef = useRef();
   const pickMeshRefInternal = useRef();
@@ -127,27 +181,9 @@ export function CloseApproaches({ data, earthPos, filterType = 'ALL', pickMeshRe
   useEffect(() => {
     let cancelled = false;
 
-    fetch('/data/orbits.json')
-      .then((res) => res.json())
-      .then((rows) => {
-        if (cancelled || !Array.isArray(rows)) return;
-
-        const byName = new Map();
-        for (let i = 0; i < rows.length; i++) {
-          const orbit = rows[i];
-          if (!orbit) continue;
-
-          const nameKey = normalizeDesignation(orbit[8]);
-          if (nameKey && !byName.has(nameKey)) {
-            byName.set(nameKey, orbit);
-          }
-
-          const idKey = normalizeDesignation(orbit[0]);
-          if (idKey && !byName.has(idKey)) {
-            byName.set(idKey, orbit);
-          }
-        }
-
+    loadOrbitIndexByName()
+      .then((byName) => {
+        if (cancelled) return;
         setOrbitIndexByName(byName);
       })
       .catch(() => {

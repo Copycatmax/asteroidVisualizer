@@ -297,6 +297,10 @@ function CameraRecenter({ controlsRef, doRecenter, onRecenterDone, earthPos, isR
         duration: 1.5,
         ease: 'power2.inOut'
       }, 0);
+    }).catch((error) => {
+      if (isDisposed) return;
+      console.error('Failed to load GSAP recenter animation chunk:', error);
+      onRecenterDone();
     });
 
     return () => {
@@ -336,6 +340,9 @@ function CameraRecenter({ controlsRef, doRecenter, onRecenterDone, earthPos, isR
         duration: 1.2,
         ease: 'power2.inOut'
       }, 0);
+    }).catch((error) => {
+      if (isDisposed) return;
+      console.error('Failed to load GSAP earth-return animation chunk:', error);
     });
 
     return () => {

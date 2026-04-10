@@ -194,7 +194,7 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
     if (meshRef.current.instanceColor) {
       meshRef.current.instanceColor.setUsage(THREE.DynamicDrawUsage);
     }
-  }, [pickMeshRef]);
+  }, [pickMeshRef, orbits.length]);
 
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const color = useMemo(() => new THREE.Color(), []);

@@ -350,7 +350,7 @@ async function processCloseApproaches() {
           approachesByYear[year] = [];
         }
 
-        const timestampStr = dateObj.getTime();
+        const timestampMs = dateObj.getTime();
         const distAu = parseFloat(data.distance_au);
         const velKmS = parseFloat(data.velocity_km_s);
         const H = parseFloat(data.absolute_magnitude) || 25;
@@ -359,13 +359,13 @@ async function processCloseApproaches() {
 
         if (!isNaN(distAu) && !isNaN(velKmS)) {
           // [0:name, 1:timestamp_ms, 2:distance_au, 3:velocity_kms, 4:H]
-          approachesByYear[year].push([name, timestampStr, distAu, velKmS, H]);
+          approachesByYear[year].push([name, timestampMs, distAu, velKmS, H]);
 
           if (normalizedDesignation) {
             if (!eventsByDesignation.has(normalizedDesignation)) {
               eventsByDesignation.set(normalizedDesignation, []);
             }
-            eventsByDesignation.get(normalizedDesignation).push({ timestampMs: timestampStr, distAu });
+            eventsByDesignation.get(normalizedDesignation).push({ timestampMs, distAu });
           }
         }
       })

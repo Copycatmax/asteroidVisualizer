@@ -1,22 +1,23 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { visualizer } from 'rollup-plugin-visualizer'
 
 // https://vite.dev/config/
-export default defineConfig(({ mode }) => {
+export default defineConfig(async ({ mode }) => {
   const isAnalyze = mode === 'analyze'
+  const analyzePlugin = isAnalyze
+    ? (await import('rollup-plugin-visualizer')).visualizer({
+        filename: 'dist/bundle-analysis.html',
+        template: 'treemap',
+        gzipSize: true,
+        brotliSize: true,
+        open: false,
+      })
+    : null
 
   return {
     plugins: [
       react(),
-      isAnalyze &&
-        visualizer({
-          filename: 'dist/bundle-analysis.html',
-          template: 'treemap',
-          gzipSize: true,
-          brotliSize: true,
-          open: false,
-        }),
+      analyzePlugin,
     ].filter(Boolean),
     build: {
       chunkSizeWarningLimit: 900,
