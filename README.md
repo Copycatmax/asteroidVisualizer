@@ -17,6 +17,11 @@ At runtime, the app combines two datasets:
 - Orbital elements dataset loaded from public/data/orbits.json.
 - Yearly close-approach chunks loaded from public/data/approaches_YYYY.json.
 
+## Prerequisites
+
+- Node.js 20.19+ or 22.12+
+- npm 10+
+
 ## Quick Start
 
 ```bash
