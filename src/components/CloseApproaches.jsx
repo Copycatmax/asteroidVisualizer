@@ -39,15 +39,6 @@ function deterministicUnitVector(seedKey) {
   };
 }
 
-function getEarthPositionAtYear(yearValue) {
-  const angle = (yearValue - 2000) * (Math.PI * 2);
-  return {
-    x: Math.cos(angle) * AU_TO_UNITS,
-    y: 0,
-    z: Math.sin(angle) * AU_TO_UNITS,
-  };
-}
-
 function getOrbitPositionAtYear(orbit, yearValue) {
   const aAu = orbit[1];
   const e = orbit[2];
@@ -142,6 +133,11 @@ export function CloseApproaches({ data, earthPos, filterType = 'ALL', pickMeshRe
     meshRef.current.count = visibleData.length;
     pickMeshRef.current.count = visibleData.length;
     let maxPickDistance = 1;
+    const earthAnchor = {
+      x: Array.isArray(earthPos) ? Number(earthPos[0]) || 0 : 0,
+      y: Array.isArray(earthPos) ? Number(earthPos[1]) || 0 : 0,
+      z: Array.isArray(earthPos) ? Number(earthPos[2]) || 0 : 0,
+    };
 
     for (let i = 0; i < visibleData.length; i++) {
         // [name, timestamp_ms, distance_au, velocity_kms, H]
@@ -160,11 +156,10 @@ export function CloseApproaches({ data, earthPos, filterType = 'ALL', pickMeshRe
         if (matchingOrbit) {
           const yearAtEvent = 2000 + (event[1] - Date.UTC(2000, 0, 1)) / (365.25 * 24 * 60 * 60 * 1000);
           const asteroidPos = getOrbitPositionAtYear(matchingOrbit, yearAtEvent);
-          const earthAtEvent = getEarthPositionAtYear(yearAtEvent);
 
-          const rx = asteroidPos.x - earthAtEvent.x;
-          const ry = asteroidPos.y - earthAtEvent.y;
-          const rz = asteroidPos.z - earthAtEvent.z;
+          const rx = asteroidPos.x - earthAnchor.x;
+          const ry = asteroidPos.y - earthAnchor.y;
+          const rz = asteroidPos.z - earthAnchor.z;
           const len = Math.hypot(rx, ry, rz);
 
           if (len > 1e-6) {
@@ -222,7 +217,7 @@ export function CloseApproaches({ data, earthPos, filterType = 'ALL', pickMeshRe
     if (onApproachDataChange) {
       onApproachDataChange(visibleData);
     }
-  }, [visibleData, orbitIndexByName, dummy, color, onApproachDataChange, pickMeshRef]);
+  }, [visibleData, orbitIndexByName, dummy, color, onApproachDataChange, pickMeshRef, earthPos]);
 
   if (visibleData.length === 0) return null;
 

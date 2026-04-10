@@ -1,7 +1,7 @@
 let sourceData = [];
 
 self.onmessage = function (e) {
-  const { type, filterType, payload } = e.data;
+  const { type, filterType, payload, requestId } = e.data;
 
   if (type === 'SET_DATA') {
     sourceData = Array.isArray(payload) ? payload : [];
@@ -10,12 +10,12 @@ self.onmessage = function (e) {
 
   if (type === 'FILTER') {
     if (filterType === 'NONE') {
-      self.postMessage({ type: 'FILTERED_DATA', payload: [] });
+      self.postMessage({ type: 'FILTERED_DATA', payload: [], requestId });
       return;
     }
 
     if (filterType === 'ALL') {
-      self.postMessage({ type: 'USE_SOURCE_DATA' });
+      self.postMessage({ type: 'USE_SOURCE_DATA', requestId });
       return;
     }
 
@@ -26,6 +26,6 @@ self.onmessage = function (e) {
       filtered = sourceData.filter((orbit) => orbit[7] === 0);
     }
 
-    self.postMessage({ type: 'FILTERED_DATA', payload: filtered });
+    self.postMessage({ type: 'FILTERED_DATA', payload: filtered, requestId });
   }
 };

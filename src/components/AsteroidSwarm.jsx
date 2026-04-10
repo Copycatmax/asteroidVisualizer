@@ -47,6 +47,7 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
   const pickMeshRef = externalPickMeshRef || pickMeshRefInternal;
   const workerRef = useRef(null);
   const orbitsRef = useRef([]);
+  const latestFilterRequestIdRef = useRef(0);
 
   const [orbits, setOrbits] = useState([]);
   const [filteredOrbits, setFilteredOrbits] = useState([]);
@@ -142,6 +143,11 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
     setIsWorkerReady(true);
 
     workerRef.current.onmessage = (e) => {
+      const messageRequestId = Number(e.data?.requestId);
+      if (Number.isFinite(messageRequestId) && messageRequestId !== latestFilterRequestIdRef.current) {
+        return;
+      }
+
       if (e.data.type === 'FILTERED_DATA') {
         setFilteredOrbits(e.data.payload);
       } else if (e.data.type === 'USE_SOURCE_DATA') {
@@ -163,6 +169,9 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
   }, [isWorkerReady, orbits]);
 
   useEffect(() => {
+    latestFilterRequestIdRef.current += 1;
+    const requestId = latestFilterRequestIdRef.current;
+
     if (filterType === 'ALL') {
       setFilteredOrbits(orbits);
       return;
@@ -174,7 +183,7 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
     }
 
     if (isWorkerReady && workerRef.current) {
-      workerRef.current.postMessage({ type: 'FILTER', filterType });
+      workerRef.current.postMessage({ type: 'FILTER', filterType, requestId });
     }
   }, [filterType, isWorkerReady, orbits]);
 
