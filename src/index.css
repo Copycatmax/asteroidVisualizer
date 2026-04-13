@@ -37,13 +37,17 @@ body {
   z-index: 0;
 }
 
-/* CRITICAL: Drei's <Html> creates outer wrapper divs as siblings of the <canvas>.
-   Without this, those wrappers capture pointer events before they reach WebGL. */
-.label-no-events {
-  pointer-events: none !important;
-}
-.label-no-events * {
-  pointer-events: none !important;
+.loading-indicator {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #aaddff;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  background: radial-gradient(circle at center, rgba(10, 15, 30, 0.6), rgba(2, 2, 5, 0.92));
+  z-index: 1;
 }
 
 /* Glassmorphism HUD Panels */
@@ -85,6 +89,19 @@ body {
   color: #94a3b8;
   letter-spacing: 1px;
   text-transform: uppercase;
+}
+
+.search-wrap {
+  margin-top: 12px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  border-radius: 4px;
 }
 
 .legend-glass {
@@ -143,6 +160,11 @@ body {
   letter-spacing: 1px;
   color: #64748b;
   text-transform: uppercase;
+}
+
+.status-inline {
+  margin-top: 12px;
+  display: inline-block;
 }
 
 /* Timeline Scrubber */

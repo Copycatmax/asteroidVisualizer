@@ -1,6 +1,7 @@
 import React, { useRef, useMemo } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
+import { stablePhaseOffset } from '../utils/orbitMath';
 
 const AU_TO_UNITS = 20;
 
@@ -43,7 +44,8 @@ export function TrajectoryLines({ orbit, activeYear }) {
     // Calculate static position of the asteroid itself based on precise elapsed time!
     const periodYears = Math.sqrt(Math.pow(orbit[1], 3)); // P = a^3 (Kepler's 3rd)
     const n = (Math.PI * 2) / periodYears; 
-    let M = n * (activeYear - 2000); // Approximated mean anomaly from J2000
+    const phaseOffset = Number.isFinite(orbit[9]) ? orbit[9] : stablePhaseOffset(orbit[0]);
+    let M = n * (activeYear - 2000) + phaseOffset; // Synthetic but stable orbital phase
     M = M % (Math.PI * 2);
     
     // Newton-Raphson solver for Eccentric Anomaly (E)

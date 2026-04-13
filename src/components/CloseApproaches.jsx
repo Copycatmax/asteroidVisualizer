@@ -1,9 +1,9 @@
-import React, { useRef, useMemo, useEffect } from 'react';
+import React, { useRef, useMemo, useEffect, useState } from 'react';
 import * as THREE from 'three';
-import { useThree } from '@react-three/fiber';
+import { stablePhaseOffset } from '../utils/orbitMath';
+import { loadOrbitIndexByName, normalizeDesignation } from '../utils/orbitData';
 
 const AU_TO_UNITS = 20;
-const PICK_CONSUMED_KEY = '__avPickConsumed';
 
 function hashString(value) {
   let h = 2166136261;
@@ -39,108 +39,95 @@ function deterministicUnitVector(seedKey) {
   };
 }
 
-function ManualApproachClickDetector({ pickMeshRef, visibleData, onSelectApproach }) {
-  const { camera, gl } = useThree();
-  const raycaster = useMemo(() => new THREE.Raycaster(), []);
+function getOrbitPositionAtYear(orbit, yearValue) {
+  const aAu = orbit[1];
+  const e = orbit[2];
+  const inc = orbit[3];
+  const om = orbit[4];
+  const w = orbit[5];
 
-  useEffect(() => {
-    const canvas = gl.domElement;
-    let downX = 0;
-    let downY = 0;
-    let downPointerId = null;
+  const periodYears = Math.sqrt(aAu * aAu * aAu);
+  const n = (Math.PI * 2) / Math.max(periodYears, 1e-6);
+  const phaseOffset = Number.isFinite(orbit[9]) ? orbit[9] : stablePhaseOffset(orbit[0]);
+  let M = n * (yearValue - 2000) + phaseOffset;
+  M = ((M % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
 
-    const pickAt = (clientX, clientY) => {
-      if (!pickMeshRef.current || !onSelectApproach) return false;
-      if (visibleData.length === 0 || pickMeshRef.current.count === 0) return false;
+  let E = M;
+  for (let i = 0; i < 8; i++) {
+    E = E - (E - e * Math.sin(E) - M) / Math.max(1 - e * Math.cos(E), 1e-6);
+  }
 
-      const rect = canvas.getBoundingClientRect();
-      const mouse = new THREE.Vector2(
-        ((clientX - rect.left) / rect.width) * 2 - 1,
-        -((clientY - rect.top) / rect.height) * 2 + 1
-      );
+  const aUnits = aAu * AU_TO_UNITS;
+  const xp = aUnits * (Math.cos(E) - e);
+  const yp = aUnits * Math.sqrt(Math.max(1 - e * e, 0)) * Math.sin(E);
 
-      raycaster.setFromCamera(mouse, camera);
+  const cosw = Math.cos(w);
+  const sinw = Math.sin(w);
+  const cosi = Math.cos(inc);
+  const sini = Math.sin(inc);
+  const cosom = Math.cos(om);
+  const sinom = Math.sin(om);
 
-      const intersects = raycaster.intersectObject(pickMeshRef.current);
-      if (intersects.length > 0 && intersects[0].instanceId !== undefined) {
-        const event = visibleData[intersects[0].instanceId];
-        if (event) {
-          onSelectApproach(event);
-          return true;
-        }
-      }
+  const xPlane = xp * cosw - yp * sinw;
+  const yPlane = xp * sinw + yp * cosw;
 
-      return false;
-    };
+  const x = cosom * xPlane - sinom * cosi * yPlane;
+  const y = sinom * xPlane + cosom * cosi * yPlane;
+  const z = sini * yPlane;
 
-    const handlePointerDown = (event) => {
-      downPointerId = event.pointerId;
-      downX = event.clientX;
-      downY = event.clientY;
-    };
-
-    const handlePointerUp = (event) => {
-      if (downPointerId !== event.pointerId) return;
-      const pickToken = `${event.pointerId}:${event.timeStamp}`;
-
-      if (window[PICK_CONSUMED_KEY] === pickToken) {
-        downPointerId = null;
-        return;
-      }
-
-      const dx = event.clientX - downX;
-      const dy = event.clientY - downY;
-      const moved = Math.hypot(dx, dy);
-
-      if (moved <= 5) {
-        const clientX = event.clientX;
-        const clientY = event.clientY;
-
-        // Let asteroid picker run first on the same click; close-approach acts as fallback.
-        setTimeout(() => {
-          if (window[PICK_CONSUMED_KEY] === pickToken) {
-            return;
-          }
-
-          const didPick = pickAt(clientX, clientY);
-          if (didPick) {
-            window[PICK_CONSUMED_KEY] = pickToken;
-          }
-        }, 0);
-      }
-      downPointerId = null;
-    };
-
-    canvas.addEventListener('pointerdown', handlePointerDown);
-    canvas.addEventListener('pointerup', handlePointerUp);
-
-    return () => {
-      canvas.removeEventListener('pointerdown', handlePointerDown);
-      canvas.removeEventListener('pointerup', handlePointerUp);
-    };
-  }, [camera, gl, onSelectApproach, pickMeshRef, raycaster, visibleData]);
-
-  return null;
+  return { x, y: z, z: y };
 }
 
-export function CloseApproaches({ data, earthPos, filterType = 'ALL', onSelectApproach }) {
+export function CloseApproaches({ data, earthPos, filterType = 'ALL', pickMeshRef: externalPickMeshRef, onApproachDataChange }) {
   const meshRef = useRef();
-  const pickMeshRef = useRef();
+  const pickMeshRefInternal = useRef();
+  const pickMeshRef = externalPickMeshRef || pickMeshRefInternal;
+  const [orbitIndexByName, setOrbitIndexByName] = useState(() => new Map());
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const color = useMemo(() => new THREE.Color(), []);
   const visibleData = useMemo(() => {
     if (!data || data.length === 0) return [];
 
-    if (filterType === 'SAFE') {
-      return data.filter((event) => event[2] > 0.05);
+    if (filterType === 'NONE') {
+      return [];
     }
 
-    if (filterType === 'PHA') {
-      return data.filter((event) => event[2] <= 0.05);
+    if (filterType === 'ALL') {
+      return data;
+    }
+
+    if (filterType === 'SAFE' || filterType === 'PHA') {
+      const wantPha = filterType === 'PHA';
+      return data.filter((event) => {
+        const eventKey = normalizeDesignation(event[0]);
+        const matchingOrbit = orbitIndexByName.get(eventKey);
+        if (!matchingOrbit) return false;
+        const isPha = matchingOrbit[7] === 1;
+        return isPha === wantPha;
+      });
     }
 
     return data;
-  }, [data, filterType]);
+  }, [data, filterType, orbitIndexByName]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    loadOrbitIndexByName()
+      .then((byName) => {
+        if (cancelled) return;
+        setOrbitIndexByName(byName);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setOrbitIndexByName(new Map());
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!meshRef.current || !pickMeshRef.current) return;
@@ -148,11 +135,20 @@ export function CloseApproaches({ data, earthPos, filterType = 'ALL', onSelectAp
     if (visibleData.length === 0) {
       meshRef.current.count = 0;
       pickMeshRef.current.count = 0;
+      if (onApproachDataChange) {
+        onApproachDataChange([]);
+      }
       return;
     }
 
     meshRef.current.count = visibleData.length;
     pickMeshRef.current.count = visibleData.length;
+    let maxPickDistance = 1;
+    const earthAnchor = {
+      x: Array.isArray(earthPos) ? Number(earthPos[0]) || 0 : 0,
+      y: Array.isArray(earthPos) ? Number(earthPos[1]) || 0 : 0,
+      z: Array.isArray(earthPos) ? Number(earthPos[2]) || 0 : 0,
+    };
 
     for (let i = 0; i < visibleData.length; i++) {
         // [name, timestamp_ms, distance_au, velocity_kms, H]
@@ -163,9 +159,29 @@ export function CloseApproaches({ data, earthPos, filterType = 'ALL', onSelectAp
         // Radius from earth perfectly clamped to just outside Earth's graphic (0.052) so true mathematical sub-orbital distances don't physically clip the visual model
         const r = Math.max(0.052, distAu * AU_TO_UNITS);
         
-        // Deterministic pseudo-direction keeps each event visually stable across renders.
-        const seedKey = `${event[0]}|${event[1]}|${event[2]}`;
-        const dir = deterministicUnitVector(seedKey);
+        // Prefer orbit-derived direction to reduce apparent angular mismatch with asteroid motion.
+        let dir = null;
+        const eventKey = normalizeDesignation(event[0]);
+        const matchingOrbit = orbitIndexByName.get(eventKey);
+
+        if (matchingOrbit) {
+          const yearAtEvent = 2000 + (event[1] - Date.UTC(2000, 0, 1)) / (365.25 * 24 * 60 * 60 * 1000);
+          const asteroidPos = getOrbitPositionAtYear(matchingOrbit, yearAtEvent);
+
+          const rx = asteroidPos.x - earthAnchor.x;
+          const ry = asteroidPos.y - earthAnchor.y;
+          const rz = asteroidPos.z - earthAnchor.z;
+          const len = Math.hypot(rx, ry, rz);
+
+          if (len > 1e-6) {
+            dir = { x: rx / len, y: ry / len, z: rz / len };
+          }
+        }
+
+        if (!dir) {
+          const seedKey = `${event[0]}|${event[1]}|${event[2]}`;
+          dir = deterministicUnitVector(seedKey);
+        }
 
         const x = r * dir.x;
         const y = r * dir.y;
@@ -186,6 +202,7 @@ export function CloseApproaches({ data, earthPos, filterType = 'ALL', onSelectAp
         dummy.scale.set(pickScale, pickScale, pickScale);
         dummy.updateMatrix();
         pickMeshRef.current.setMatrixAt(i, dummy.matrix);
+        maxPickDistance = Math.max(maxPickDistance, r + pickScale);
 
         // Color coding by proximity hazard level
         if (distAu <= 0.01) {
@@ -197,29 +214,31 @@ export function CloseApproaches({ data, earthPos, filterType = 'ALL', onSelectAp
         }
         meshRef.current.setColorAt(i, color);
     }
+
+      // Ensure instanced raycasting broad-phase checks include translated markers.
+      const sharedBounds = new THREE.Sphere(new THREE.Vector3(0, 0, 0), maxPickDistance);
+      meshRef.current.geometry.boundingSphere = sharedBounds;
+      pickMeshRef.current.geometry.boundingSphere = sharedBounds;
     
     meshRef.current.instanceMatrix.needsUpdate = true;
     meshRef.current.instanceColor.needsUpdate = true;
     pickMeshRef.current.instanceMatrix.needsUpdate = true;
-  }, [visibleData, dummy, color]);
+    if (onApproachDataChange) {
+      onApproachDataChange(visibleData);
+    }
+  }, [visibleData, orbitIndexByName, dummy, color, onApproachDataChange, pickMeshRef, earthPos]);
 
   if (visibleData.length === 0) return null;
 
   return (
     <group position={earthPos || [0, 0, 0]}>
-      <ManualApproachClickDetector
-        pickMeshRef={pickMeshRef}
-        visibleData={visibleData}
-        onSelectApproach={onSelectApproach}
-      />
-
       <instancedMesh ref={meshRef} args={[null, null, visibleData.length]}>
-        <sphereGeometry args={[1, 16, 16]} />
+        <sphereGeometry args={[1, 8, 8]} />
         <meshBasicMaterial toneMapped={false} />
       </instancedMesh>
 
       <instancedMesh ref={pickMeshRef} args={[null, null, visibleData.length]} frustumCulled={false}>
-        <sphereGeometry args={[1, 8, 8]} />
+        <sphereGeometry args={[1, 6, 6]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
       </instancedMesh>
     </group>

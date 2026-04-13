@@ -1,12 +1,12 @@
 import React, { useRef, useEffect, useCallback, useState, useMemo, Suspense } from 'react';
-import { Canvas, useThree } from '@react-three/fiber';
-import { OrbitControls, Stars, Sphere, Html } from '@react-three/drei';
+import { Canvas, useThree, useFrame, extend } from '@react-three/fiber';
 import { AsteroidSwarm } from './AsteroidSwarm';
 import { CloseApproaches } from './CloseApproaches';
 import { TrajectoryLines } from './TrajectoryLines';
-import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import * as THREE from 'three';
-import gsap from 'gsap';
+import { OrbitControls as ThreeOrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+
+extend({ ThreeOrbitControls });
 
 const AU_TO_UNITS = 20;
 const planets = [
@@ -17,66 +17,362 @@ const planets = [
 
 const DEFAULT_SUN_VIEW = { x: 0, y: 35, z: 50 };
 
-// Handles the recenter/return camera animation via GSAP
-function CameraRecenter({ controlsRef, doRecenter, onRecenterDone, earthPos, isRecentered }) {
-  const { camera } = useThree();
+function LabelSprite({ text, position, color = '#e2e8f0', fontSize = 34, height = 0.7 }) {
+  const { texture, aspect } = useMemo(() => {
+    const canvas = document.createElement('canvas');
+    const initialContext = canvas.getContext('2d');
+    if (!initialContext) {
+      const fallbackTexture = new THREE.CanvasTexture(canvas);
+      return { texture: fallbackTexture, aspect: 2 };
+    }
+
+    const paddingX = 20;
+    const paddingY = 12;
+    const font = `700 ${fontSize}px system-ui`;
+    initialContext.font = font;
+
+    const width = Math.ceil(initialContext.measureText(text).width + paddingX * 2);
+    const labelHeight = Math.ceil(fontSize + paddingY * 2);
+    canvas.width = width;
+    canvas.height = labelHeight;
+
+    const context = canvas.getContext('2d');
+    if (!context) {
+      const fallbackTexture = new THREE.CanvasTexture(canvas);
+      return { texture: fallbackTexture, aspect: 2 };
+    }
+
+    context.font = font;
+    context.textBaseline = 'middle';
+    context.textAlign = 'center';
+    context.fillStyle = 'rgba(0, 0, 0, 0.45)';
+    context.fillRect(0, 0, width, labelHeight);
+    context.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    context.lineWidth = 2;
+    context.strokeRect(1, 1, width - 2, labelHeight - 2);
+    context.fillStyle = color;
+    context.fillText(text, width / 2, labelHeight / 2);
+
+    const spriteTexture = new THREE.CanvasTexture(canvas);
+    spriteTexture.needsUpdate = true;
+    spriteTexture.minFilter = THREE.LinearFilter;
+    spriteTexture.magFilter = THREE.LinearFilter;
+    spriteTexture.generateMipmaps = false;
+
+    return { texture: spriteTexture, aspect: width / labelHeight };
+  }, [text, color, fontSize]);
 
   useEffect(() => {
-    if (!doRecenter || !controlsRef.current) return;
+    return () => texture.dispose();
+  }, [texture]);
 
-    const target = controlsRef.current.target;
-    const tl = gsap.timeline({
-      onComplete: () => onRecenterDone(),
-      onUpdate: () => controlsRef.current.update()
-    });
+  return (
+    <sprite position={position} scale={[height * aspect, height, 1]} renderOrder={20}>
+      <spriteMaterial map={texture} transparent depthWrite={false} depthTest={false} toneMapped={false} />
+    </sprite>
+  );
+}
 
-    tl.to(target, {
-      x: 0, y: 0, z: 0,
-      duration: 1.5,
-      ease: 'power2.inOut'
-    }, 0);
-    tl.to(camera.position, {
-      x: DEFAULT_SUN_VIEW.x,
-      y: DEFAULT_SUN_VIEW.y,
-      z: DEFAULT_SUN_VIEW.z,
-      duration: 1.5,
-      ease: 'power2.inOut'
-    }, 0);
+function StarField() {
+  const starCount = 3500;
 
-    return () => tl.kill();
-  }, [camera, controlsRef, doRecenter, onRecenterDone]);
+  const pseudo = (seed) => {
+    const x = Math.sin(seed * 12.9898) * 43758.5453;
+    return x - Math.floor(x);
+  };
 
-  // Animate back to Earth when un-recentered
+  const positions = useMemo(() => {
+    const array = new Float32Array(starCount * 3);
+    for (let i = 0; i < starCount; i++) {
+      const i3 = i * 3;
+      const radius = 60 + pseudo(i + 1) * 140;
+      const theta = pseudo(i + 2) * Math.PI * 2;
+      const phi = Math.acos(2 * pseudo(i + 3) - 1);
+      array[i3] = radius * Math.sin(phi) * Math.cos(theta);
+      array[i3 + 1] = radius * Math.cos(phi);
+      array[i3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
+    }
+    return array;
+  }, []);
+
+  return (
+    <points>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" array={positions} count={starCount} itemSize={3} />
+      </bufferGeometry>
+      <pointsMaterial color="#dbeafe" size={0.11} sizeAttenuation transparent opacity={0.85} />
+    </points>
+  );
+}
+
+function CameraControlsRig({ controlsRef, onControlsReady }) {
+  const { camera, gl } = useThree();
+  const localControlsRef = useRef(null);
+
   useEffect(() => {
-    if (isRecentered || !controlsRef.current) return;
+    const controls = localControlsRef.current;
+    controlsRef.current = controls;
+    if (onControlsReady) {
+      onControlsReady(Boolean(controls));
+    }
 
-    const target = controlsRef.current.target;
-    const tl = gsap.timeline({
-      onUpdate: () => controlsRef.current.update()
-    });
+    return () => {
+      if (controls && typeof controls.dispose === 'function') {
+        controls.dispose();
+      }
+      if (controlsRef.current === controls) {
+        controlsRef.current = null;
+      }
+    };
+  }, [controlsRef, onControlsReady]);
 
-    tl.to(target, {
-      x: earthPos.x, y: earthPos.y, z: earthPos.z,
-      duration: 1.2,
-      ease: 'power2.inOut'
-    }, 0);
-    tl.to(camera.position, {
-      x: earthPos.x,
-      y: 20,
-      z: earthPos.z + 30,
-      duration: 1.2,
-      ease: 'power2.inOut'
-    }, 0);
+  useFrame(() => {
+    if (localControlsRef.current) {
+      localControlsRef.current.update();
+    }
+  });
 
-    return () => tl.kill();
-  }, [camera, controlsRef, earthPos.x, earthPos.y, earthPos.z, isRecentered]);
+  return (
+    <threeOrbitControls
+      ref={localControlsRef}
+      args={[camera, gl.domElement]}
+      enablePan
+      enableZoom
+      enableRotate
+      autoRotate={false}
+    />
+  );
+}
+
+function UnifiedPicker({ orbitPickMeshRef, orbitCentersRef, orbitRadiiRef, orbitDataRef, approachPickMeshRef, approachDataRef, onSelectOrbit, onSelectApproach }) {
+  const { camera, gl } = useThree();
+  const raycaster = useMemo(() => new THREE.Raycaster(), []);
+  const tempPoint = useMemo(() => new THREE.Vector3(), []);
+
+  useEffect(() => {
+    const canvas = gl.domElement;
+    let downX = 0;
+    let downY = 0;
+    let downPointerId = null;
+
+    const pickOrbit = (clientX, clientY) => {
+      if (!orbitPickMeshRef.current || !onSelectOrbit) return false;
+      const orbits = orbitDataRef.current || [];
+      if (orbits.length === 0 || orbitPickMeshRef.current.count === 0) return false;
+
+      const rect = canvas.getBoundingClientRect();
+      const mouse = new THREE.Vector2(
+        ((clientX - rect.left) / rect.width) * 2 - 1,
+        -((clientY - rect.top) / rect.height) * 2 + 1
+      );
+
+      raycaster.setFromCamera(mouse, camera);
+
+      const centers = orbitCentersRef.current;
+      const radii = orbitRadiiRef.current;
+      if (!centers || !radii) return false;
+
+      const distanceScaleSq = 0.0035 * 0.0035;
+      let bestIndex = -1;
+      let bestScore = Infinity;
+
+      for (let i = 0; i < orbits.length; i++) {
+        const base = i * 3;
+        tempPoint.set(centers[base], centers[base + 1], centers[base + 2]);
+
+        const rayDistSq = raycaster.ray.distanceSqToPoint(tempPoint);
+        const camDistSq = camera.position.distanceToSquared(tempPoint);
+        const baseRadiusSq = radii[i] * radii[i];
+        const limitSq = Math.max(baseRadiusSq, camDistSq * distanceScaleSq);
+
+        if (rayDistSq <= limitSq) {
+          const score = rayDistSq / Math.max(limitSq, 1e-9);
+          if (score < bestScore) {
+            bestScore = score;
+            bestIndex = i;
+          }
+        }
+      }
+
+      if (bestIndex >= 0) {
+        const orbit = orbits[bestIndex];
+        if (orbit) {
+          onSelectOrbit(orbit);
+          return true;
+        }
+      }
+
+      return false;
+    };
+
+    const pickApproach = (clientX, clientY) => {
+      if (!approachPickMeshRef.current || !onSelectApproach) return false;
+      const approaches = approachDataRef.current || [];
+      if (approaches.length === 0 || approachPickMeshRef.current.count === 0) return false;
+
+      const rect = canvas.getBoundingClientRect();
+      const mouse = new THREE.Vector2(
+        ((clientX - rect.left) / rect.width) * 2 - 1,
+        -((clientY - rect.top) / rect.height) * 2 + 1
+      );
+
+      raycaster.setFromCamera(mouse, camera);
+
+      const intersects = raycaster.intersectObject(approachPickMeshRef.current);
+      if (intersects.length > 0 && intersects[0].instanceId !== undefined) {
+        const approach = approaches[intersects[0].instanceId];
+        if (approach) {
+          onSelectApproach(approach);
+          return true;
+        }
+      }
+
+      return false;
+    };
+
+    const handlePointerDown = (event) => {
+      downPointerId = event.pointerId;
+      downX = event.clientX;
+      downY = event.clientY;
+    };
+
+    const handlePointerUp = (event) => {
+      if (downPointerId !== event.pointerId) return;
+
+      const dx = event.clientX - downX;
+      const dy = event.clientY - downY;
+      const moved = Math.hypot(dx, dy);
+      if (moved <= 5) {
+        const didPickOrbit = pickOrbit(event.clientX, event.clientY);
+        if (!didPickOrbit) {
+          pickApproach(event.clientX, event.clientY);
+        }
+      }
+      downPointerId = null;
+    };
+
+    canvas.addEventListener('pointerdown', handlePointerDown);
+    canvas.addEventListener('pointerup', handlePointerUp);
+
+    return () => {
+      canvas.removeEventListener('pointerdown', handlePointerDown);
+      canvas.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [approachDataRef, approachPickMeshRef, camera, gl, onSelectApproach, onSelectOrbit, orbitCentersRef, orbitDataRef, orbitPickMeshRef, orbitRadiiRef, raycaster, tempPoint]);
 
   return null;
 }
 
-export function SpaceCanvas({ approachesData, filterType, selectedOrbit, onSelectOrbit, onSelectApproach, activeYear, isRecentered }) {
+// Handles the recenter/return camera animation via GSAP
+function CameraRecenter({ controlsRef, controlsReady, doRecenter, onRecenterDone, earthPos, isRecentered }) {
+  const { camera } = useThree();
+  const prevIsRecenteredRef = useRef(isRecentered);
+
+  useEffect(() => {
+    if (!doRecenter || !controlsReady || !controlsRef.current) return;
+
+    const target = controlsRef.current.target;
+    let isDisposed = false;
+    let timeline = null;
+
+    import('gsap').then((module) => {
+      if (isDisposed || !controlsRef.current) return;
+      const gsap = module.default;
+
+      timeline = gsap.timeline({
+        onComplete: () => onRecenterDone(),
+        onUpdate: () => controlsRef.current.update()
+      });
+
+      timeline.to(target, {
+        x: 0, y: 0, z: 0,
+        duration: 1.5,
+        ease: 'power2.inOut'
+      }, 0);
+      timeline.to(camera.position, {
+        x: DEFAULT_SUN_VIEW.x,
+        y: DEFAULT_SUN_VIEW.y,
+        z: DEFAULT_SUN_VIEW.z,
+        duration: 1.5,
+        ease: 'power2.inOut'
+      }, 0);
+    }).catch((error) => {
+      if (isDisposed) return;
+      console.error('Failed to load GSAP recenter animation chunk:', error);
+      onRecenterDone();
+    });
+
+    return () => {
+      isDisposed = true;
+      if (timeline) timeline.kill();
+    };
+  }, [camera, controlsReady, controlsRef, doRecenter, onRecenterDone]);
+
+  // Animate back to Earth only when transitioning from recentered -> tracked mode.
+  useEffect(() => {
+    const wasRecentered = prevIsRecenteredRef.current;
+    prevIsRecenteredRef.current = isRecentered;
+
+    if (!wasRecentered || isRecentered || !controlsReady || !controlsRef.current) return;
+
+    const target = controlsRef.current.target;
+    let isDisposed = false;
+    let timeline = null;
+
+    import('gsap').then((module) => {
+      if (isDisposed || !controlsRef.current) return;
+      const gsap = module.default;
+
+      timeline = gsap.timeline({
+        onUpdate: () => controlsRef.current.update()
+      });
+
+      timeline.to(target, {
+        x: earthPos.x, y: earthPos.y, z: earthPos.z,
+        duration: 1.2,
+        ease: 'power2.inOut'
+      }, 0);
+      timeline.to(camera.position, {
+        x: earthPos.x,
+        y: 20,
+        z: earthPos.z + 30,
+        duration: 1.2,
+        ease: 'power2.inOut'
+      }, 0);
+    }).catch((error) => {
+      if (isDisposed) return;
+      console.error('Failed to load GSAP earth-return animation chunk:', error);
+    });
+
+    return () => {
+      isDisposed = true;
+      if (timeline) timeline.kill();
+    };
+  }, [camera, controlsReady, controlsRef, earthPos.x, earthPos.y, earthPos.z, isRecentered]);
+
+  return null;
+}
+
+export function SpaceCanvas({ approachesData, filterType, selectedOrbit, onSelectOrbit, onSelectApproach, activeYear, searchTerm, isRecentered }) {
   const controlsRef = useRef();
+  const [controlsReady, setControlsReady] = useState(false);
   const [doRecenter, setDoRecenter] = useState(false);
+  const orbitPickMeshRef = useRef(null);
+  const orbitCentersRef = useRef(null);
+  const orbitRadiiRef = useRef(null);
+  const orbitDataRef = useRef([]);
+  const approachPickMeshRef = useRef(null);
+  const approachDataRef = useRef([]);
+
+  const handleOrbitPickDataChange = useCallback(({ centers, radii, orbits }) => {
+    orbitCentersRef.current = centers;
+    orbitRadiiRef.current = radii;
+    orbitDataRef.current = orbits;
+  }, []);
+
+  const handleApproachDataChange = useCallback((visibleApproaches) => {
+    approachDataRef.current = visibleApproaches;
+  }, []);
 
   const earthAngle = (activeYear - 2000) * (Math.PI * 2);
   const earthRadius = 1.0 * AU_TO_UNITS;
@@ -84,6 +380,7 @@ export function SpaceCanvas({ approachesData, filterType, selectedOrbit, onSelec
     () => new THREE.Vector3(earthRadius * Math.cos(earthAngle), 0, earthRadius * Math.sin(earthAngle)),
     [earthAngle, earthRadius]
   );
+  const earthPosArray = useMemo(() => earthPos.toArray(), [earthPos]);
 
   // Dynamically lock OrbitControls to follow Earth (only when NOT recentered)
   useEffect(() => {
@@ -113,16 +410,15 @@ export function SpaceCanvas({ approachesData, filterType, selectedOrbit, onSelec
         <pointLight position={[0, 0, 0]} intensity={1.5} color="#fffcf5" />
 
         <Suspense fallback={null}>
-          <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
+          <StarField />
           
           {/* Central Heliocentric Hub */}
           <group position={[0, 0, 0]}>
-              <Sphere args={[1.5, 32, 32]}>
+              <mesh>
+                <sphereGeometry args={[1.5, 32, 32]} />
                 <meshBasicMaterial color="#ffcc00" />
-                <Html distanceFactor={25} wrapperClass="label-no-events">
-                  <div style={{ color: '#ffcc00', fontWeight: 'bold', fontSize: '12px' }}>SUN</div>
-                </Html>
-              </Sphere>
+              </mesh>
+              <LabelSprite text="Sun" position={[0, 2.8, 0]} color="#ffdd66" height={0.9} />
               {/* Earth Orbit Line */}
               <mesh rotation={[-Math.PI/2, 0, 0]}>
                   <ringGeometry args={[earthRadius - 0.05, earthRadius + 0.05, 128]} />
@@ -131,16 +427,15 @@ export function SpaceCanvas({ approachesData, filterType, selectedOrbit, onSelec
           </group>
 
           {/* Earth Tracking Model */}
-          <Sphere args={[0.05, 32, 32]} position={earthPos.toArray()}>
+          <mesh position={earthPosArray}>
+            <sphereGeometry args={[0.05, 32, 32]} />
             <meshStandardMaterial color="#2d5e9e" roughness={0.7} metalness={0.1} />
             <mesh>
                 <sphereGeometry args={[0.052, 16, 16]} />
                 <meshBasicMaterial color="#ffffff" wireframe transparent opacity={0.3} />
             </mesh>
-            <Html distanceFactor={8} wrapperClass="label-no-events">
-               <div style={{ color: '#aaddff', fontSize: '11px', background: 'rgba(0,0,0,0.6)', padding: '2px 4px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.2)' }}>Earth</div>
-            </Html>
-          </Sphere>
+          </mesh>
+          <LabelSprite text="Earth" position={[earthPos.x, 0.9, earthPos.z]} color="#aaddff" height={0.7} />
 
           {/* Scale Reference Planets */}
           {planets.map(p => {
@@ -154,49 +449,59 @@ export function SpaceCanvas({ approachesData, filterType, selectedOrbit, onSelec
                           <ringGeometry args={[r - 0.05, r + 0.05, 128]} />
                           <meshBasicMaterial color={p.color} opacity={0.3} transparent side={THREE.DoubleSide} />
                       </mesh>
-                      <Sphere args={[p.size, 32, 32]} position={[px, 0, pz]}>
+                        <mesh position={[px, 0, pz]}>
+                          <sphereGeometry args={[p.size, 32, 32]} />
                           <meshStandardMaterial color={p.color} roughness={0.7} metalness={0.1} />
-                          <Html distanceFactor={15} wrapperClass="label-no-events">
-                            <div style={{ color: 'white', fontSize: '10px', background: 'rgba(0,0,0,0.4)', padding: '2px 4px', borderRadius: '4px' }}>{p.name}</div>
-                          </Html>
-                      </Sphere>
+                        </mesh>
+                        <LabelSprite text={p.name} position={[px, 0.45, pz]} color="#f8fafc" height={0.58} />
                   </group>
               );
           })}
 
-          <AsteroidSwarm filterType={filterType} onSelectOrbit={onSelectOrbit} selectedOrbit={selectedOrbit} activeYear={activeYear} />
+          <AsteroidSwarm
+            filterType={filterType}
+            onSelectOrbit={onSelectOrbit}
+            selectedOrbit={selectedOrbit}
+            activeYear={activeYear}
+            searchTerm={searchTerm}
+            pickMeshRef={orbitPickMeshRef}
+            onOrbitPickDataChange={handleOrbitPickDataChange}
+          />
           {selectedOrbit && <TrajectoryLines orbit={selectedOrbit} activeYear={activeYear} />}
-          {filterType !== 'NONE' && approachesData && <CloseApproaches data={approachesData} earthPos={earthPos.toArray()} filterType={filterType} onSelectApproach={onSelectApproach} />}
-
-          {/* Selective Bloom: High luminance threshold so only emissive objects glow */}
-          <EffectComposer>
-            <Bloom
-              luminanceThreshold={0.9}
-              luminanceSmoothing={0.3}
-              intensity={0.8}
-              radius={0.4}
-              mipmapBlur
+          {filterType !== 'NONE' && approachesData && (
+            <CloseApproaches
+              data={approachesData}
+              earthPos={earthPosArray}
+              filterType={filterType}
+              pickMeshRef={approachPickMeshRef}
+              onApproachDataChange={handleApproachDataChange}
             />
-          </EffectComposer>
+          )}
+
         </Suspense>
 
         <CameraRecenter
           controlsRef={controlsRef}
+          controlsReady={controlsReady}
           doRecenter={doRecenter}
           onRecenterDone={handleRecenterDone}
           earthPos={earthPos}
           isRecentered={isRecentered}
         />
 
-        {/* NO target prop — managed entirely via useEffect and GSAP to prevent React from overwriting animated values */}
-        <OrbitControls 
-          ref={controlsRef}
-          makeDefault
-          enablePan={true} 
-          enableZoom={true} 
-          enableRotate={true}
-          autoRotate={false}
+        <UnifiedPicker
+          orbitPickMeshRef={orbitPickMeshRef}
+          orbitCentersRef={orbitCentersRef}
+          orbitRadiiRef={orbitRadiiRef}
+          orbitDataRef={orbitDataRef}
+          approachPickMeshRef={approachPickMeshRef}
+          approachDataRef={approachDataRef}
+          onSelectOrbit={onSelectOrbit}
+          onSelectApproach={onSelectApproach}
         />
+
+        {/* NO target prop — managed entirely via useEffect and GSAP to prevent React from overwriting animated values */}
+        <CameraControlsRig controlsRef={controlsRef} onControlsReady={setControlsReady} />
       </Canvas>
     </div>
   );
