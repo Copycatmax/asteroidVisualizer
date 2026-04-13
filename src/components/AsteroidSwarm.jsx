@@ -121,6 +121,11 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
     return sampled;
   }, [filteredOrbits, lodStride, selectedOrbit]);
 
+  const precomputedOrbitRows = useMemo(
+    () => precomputedOrbits.map((pre) => pre.orbit),
+    [precomputedOrbits]
+  );
+
   // Fetch initial massive dataset
   useEffect(() => {
     loadOrbitsRows()
@@ -299,9 +304,9 @@ export function AsteroidSwarm({ filterType, selectedOrbit, onSelectOrbit, active
     meshRef.current.instanceColor.needsUpdate = true;
     pickMeshRef.current.instanceMatrix.needsUpdate = true;
     if (onOrbitPickDataChange) {
-        onOrbitPickDataChange({ centers: pickCenters, radii: pickRadii, orbits: precomputedOrbits.map((pre) => pre.orbit) });
+      onOrbitPickDataChange({ centers: pickCenters, radii: pickRadii, orbits: precomputedOrbitRows });
     }
-  }, [activeYear, precomputedOrbits, dummy, color, onOrbitPickDataChange, pickMeshRef]);
+  }, [activeYear, precomputedOrbits, precomputedOrbitRows, dummy, color, onOrbitPickDataChange, pickMeshRef]);
 
 
   if (orbits.length === 0) return null;

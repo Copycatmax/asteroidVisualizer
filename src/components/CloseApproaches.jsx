@@ -88,16 +88,27 @@ export function CloseApproaches({ data, earthPos, filterType = 'ALL', pickMeshRe
   const visibleData = useMemo(() => {
     if (!data || data.length === 0) return [];
 
-    if (filterType === 'SAFE') {
-      return data.filter((event) => event[2] > 0.05);
+    if (filterType === 'NONE') {
+      return [];
     }
 
-    if (filterType === 'PHA') {
-      return data.filter((event) => event[2] <= 0.05);
+    if (filterType === 'ALL') {
+      return data;
+    }
+
+    if (filterType === 'SAFE' || filterType === 'PHA') {
+      const wantPha = filterType === 'PHA';
+      return data.filter((event) => {
+        const eventKey = normalizeDesignation(event[0]);
+        const matchingOrbit = orbitIndexByName.get(eventKey);
+        if (!matchingOrbit) return false;
+        const isPha = matchingOrbit[7] === 1;
+        return isPha === wantPha;
+      });
     }
 
     return data;
-  }, [data, filterType]);
+  }, [data, filterType, orbitIndexByName]);
 
   useEffect(() => {
     let cancelled = false;
